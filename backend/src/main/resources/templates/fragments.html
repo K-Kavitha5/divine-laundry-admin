@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"><head th:fragment="head(title)">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title th:text="${title} + ' · Divine Laundry'">Divine Laundry</title>
+<link rel="stylesheet" th:href="@{/assets/admin.css}">
+<script defer th:src="@{/assets/admin.js}"></script></head><body>
+<aside th:fragment="sidebar" class="sidebar">
+<a class="brand" th:href="@{/}"><span class="logo">D</span><span>Divine<small>Laundry Admin</small></span></a>
+<p class="eyebrow">WORKSPACE</p>
+<nav aria-label="Main navigation"><a th:href="@{/}">Dashboard &amp; orders</a><a th:href="@{/orders/new}">＋ New order</a><a th:href="@{/customers}">Customers</a><a th:href="@{/services}">Services &amp; prices</a></nav>
+<div class="sidebar-bottom"><span class="badge">Website milestone 1</span><p>Private admin workspace</p>
+<form th:action="@{/logout}" method="post"><button class="secondary" type="submit">Sign out</button></form></div></aside>
+<header th:fragment="topbar(title)" class="topbar"><span th:text="${businessName}">Divine Laundry</span><b th:text="${title}">Dashboard</b></header>
+<div th:fragment="errors" th:if="${#fields.hasAnyErrors()}" class="alert error" role="alert">
+<p>Please check the following:</p><ul><li th:each="err : ${#fields.allErrors()}" th:text="${err}"></li></ul></div>
+</body></html>

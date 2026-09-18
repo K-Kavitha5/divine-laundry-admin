@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"><head th:replace="~{fragments :: head('Order details')}"></head><body>
+<aside th:replace="~{fragments :: sidebar}"></aside><div class="workspace"><header th:replace="~{fragments :: topbar('Order details')}"></header><main>
+<div class="page-heading"><div><p class="eyebrow">SAVED ORDER</p><h1 th:text="${order.orderNumber}"></h1><p th:text="|${order.customer.name} · ${order.customer.phone}|"></p></div>
+<div class="actions"><a class="button secondary" th:href="@{/orders/{n}/invoice(n=${order.orderNumber})}">View / print invoice</a><a class="button" th:href="@{/orders/{n}/invoice.png(n=${order.orderNumber})}">Download PNG</a></div></div>
+<div class="alert" th:if="${success}" th:text="${success}"></div>
+<div class="stats"><article class="card"><p>Total</p><strong th:text="|₹${order.total}|"></strong></article><article class="card"><p>Paid</p><strong th:text="|₹${summary.amountPaid}|"></strong></article><article class="card"><p>Balance</p><strong th:text="|₹${summary.balance}|"></strong></article></div>
+<section class="card"><div class="section-title"><h2>Order items</h2><span class="badge" th:text="${order.paymentStatus}"></span></div>
+<p><b>Invoice:</b> <span th:text="${order.invoiceNumber}"></span> · <b>Work:</b> <span th:text="${order.workStatus}"></span></p>
+<p><b>Delivery:</b> <span th:text="${order.deliveryAt == null ? 'Not set' : #temporals.format(order.deliveryAt.atZone(businessZone), 'dd MMM yyyy, hh:mm a')}"></span></p>
+<div class="table-scroll"><table><thead><tr><th>Service</th><th>Quantity</th><th>Pieces</th><th>Rate</th><th>Amount</th></tr></thead><tbody><tr th:each="i : ${order.items}"><td th:text="${i.serviceName}"></td><td th:text="|${i.billableQuantity} ${i.pricingUnit}|"></td><td th:text="${i.pieceCount}"></td><td th:text="|₹${i.unitRate}|"></td><td th:text="|₹${i.lineTotal}|"></td></tr></tbody></table></div><p th:text="${order.notes}"></p></section>
+<div class="two-column"><form class="card" th:action="@{/orders/{n}/payments(n=${order.orderNumber})}" method="post" th:object="${paymentForm}" data-lock-submit>
+<h2>Record payment</h2><div th:replace="~{fragments :: errors}"></div><input type="hidden" th:field="*{requestId}">
+<label>Amount received (₹)<input type="number" min="0.01" step="0.01" th:max="${summary.balance}" th:field="*{amount}" required></label>
+<label>Payment mode<select th:field="*{mode}"><option th:each="m : ${modes}" th:value="${m}" th:text="${m}"></option></select></label>
+<label>Transaction reference (optional)<input th:field="*{reference}" maxlength="120"></label>
+<p>Check your bank/app before recording a UPI payment. A QR scan is not proof of payment.</p>
+<button type="submit" th:disabled="${summary.balance.signum() le 0}">Record payment</button></form>
+<section class="card"><h2>WhatsApp &amp; payment QR</h2><p>Invoice message state: <b th:text="${whatsappState}"></b></p>
+<p>Demo mode does not send messages. Live sending requires Meta setup and customer opt-in before enabling automation.</p>
+<p>SENT means accepted by Meta, not confirmed delivered. Delivery tracking is not part of this milestone.</p>
+<p th:unless="${upiConfigured}">UPI ID is not configured. The invoice image will say payment QR is unavailable.</p>
+<p th:if="${upiConfigured}">The PNG includes a QR for the current balance. Verify the payee before testing. Paid invoices have no payment QR.</p></section></div>
+<section class="card"><h2>Payment history</h2><div class="table-scroll"><table><thead><tr><th>Reference</th><th>Mode</th><th>Date</th><th>Amount</th></tr></thead><tbody><tr th:each="p : ${summary.payments}"><td th:text="${p.paymentNumber}"></td><td th:text="${p.mode}"></td><td th:text="${#temporals.format(p.paidAt.atZone(businessZone), 'dd MMM yyyy, hh:mm a')}"></td><td th:text="|₹${p.amount}|"></td></tr><tr th:if="${#lists.isEmpty(summary.payments)}"><td colspan="4">No payments recorded.</td></tr></tbody></table></div></section>
+</main></div></body></html>

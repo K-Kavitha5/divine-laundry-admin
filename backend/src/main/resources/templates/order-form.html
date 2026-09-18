@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"><head th:replace="~{fragments :: head('New order')}"></head><body>
+<aside th:replace="~{fragments :: sidebar}"></aside><div class="workspace"><header th:replace="~{fragments :: topbar('New order')}"></header><main>
+<div class="page-heading"><div><p class="eyebrow">MANUAL BOOKING</p><h1>Let's book the next order.</h1><p>Prices are calculated again on the server when you save.</p></div><a class="button secondary" th:href="@{/customers/new}">＋ Add customer</a></div>
+<form th:action="@{/orders}" method="post" th:object="${orderForm}" class="card" id="order-form" data-lock-submit>
+<div th:replace="~{fragments :: errors}"></div><input type="hidden" th:field="*{requestId}">
+<div class="form-grid"><label>Customer<select th:field="*{customerId}" required><option value="">Select a customer</option><option th:each="c : ${customers}" th:value="${c.id}" th:text="| ${c.name} · ${c.phone}|"></option></select></label>
+<label>Delivery date &amp; time (shop timezone)<input type="datetime-local" th:field="*{deliveryAt}" required></label></div>
+<div class="section-title"><h2>Services &amp; clothes</h2><button type="button" class="secondary" id="add-line">＋ Add item</button></div>
+<p>Per KG: enter weight and separate physical garment count. Per piece: quantity must match garment count. Maximum 50 lines / 500 pieces.</p>
+<div class="table-scroll"><table class="order-lines"><thead><tr><th>Service · price</th><th>Quantity / KG</th><th>Physical pieces</th><th>Estimate</th><th></th></tr></thead>
+<tbody id="line-items"><tr th:each="line, state : *{items}" class="order-line">
+<td><select th:field="*{items[__${state.index}__].serviceId}" required data-service><option value="">Choose service</option>
+<option th:each="s : ${catalog}" th:value="${s.id}" th:disabled="${s.unitRate.signum() le 0}" th:attr="data-rate=${s.unitRate},data-unit=${s.pricingUnit}" th:text="| ${s.category} · ${s.name} · ₹${s.unitRate}/${s.pricingUnit}|"></option></select></td>
+<td><input type="number" min="0.001" max="9999" step="0.001" th:field="*{items[__${state.index}__].quantity}" required data-quantity aria-label="Billable quantity"></td>
+<td><input type="number" min="1" max="500" step="1" th:field="*{items[__${state.index}__].pieces}" required data-pieces aria-label="Physical pieces"></td>
+<td><output class="line-total">—</output></td><td><button type="button" class="secondary remove-line" aria-label="Remove item">×</button></td></tr></tbody></table></div>
+<div class="form-grid totals-fields"><label>Discount amount (₹)<input type="number" th:field="*{discount}" min="0" step="0.01" required></label>
+<label>Tax amount (₹)<input type="number" th:field="*{tax}" min="0" step="0.01" required></label>
+<label class="wide">Notes<textarea th:field="*{notes}" maxlength="800" rows="3"></textarea></label></div>
+<div class="checkout"><div><small>Estimated total · rounded to whole rupees</small><strong id="estimated-total">₹0.00</strong></div><button type="submit" th:disabled="${#lists.isEmpty(customers)}">Save order &amp; generate invoice</button></div>
+<p>Tax is entered manually in this milestone. Confirm shop billing settings before using real customer data.</p></form></main></div></body></html>

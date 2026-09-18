@@ -1,0 +1,54 @@
+spring:
+  application:
+    name: divine-laundry-admin-api
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/divine_laundry?connectionTimeZone=UTC}
+    username: ${DB_USERNAME:laundry}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        type:
+          preferred_instant_jdbc_type: TIMESTAMP
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+
+server:
+  port: ${PORT:8080}
+  error:
+    include-message: never
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        http-only: true
+        same-site: lax
+        secure: ${COOKIE_SECURE:false}
+
+app:
+  business-zone: ${BUSINESS_ZONE:Asia/Kolkata}
+  business:
+    name: ${BUSINESS_NAME:Divine Laundry Trichy}
+    phone: ${BUSINESS_PHONE:+91 00000 00000}
+    address: ${BUSINESS_ADDRESS:Trichy, Tamil Nadu}
+    gst-number: ${BUSINESS_GST_NUMBER:}
+  payment:
+    upi-id: ${UPI_ID:}
+    upi-payee-name: ${UPI_PAYEE_NAME:Divine Laundry Trichy}
+  whatsapp:
+    enabled: ${WHATSAPP_ENABLED:false}
+    graph-base-url: ${WHATSAPP_GRAPH_BASE_URL:https://graph.facebook.com}
+    graph-api-version: ${WHATSAPP_GRAPH_API_VERSION:}
+    phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
+    access-token: ${WHATSAPP_ACCESS_TOKEN:}
+    template-name: ${WHATSAPP_TEMPLATE_NAME:laundry_invoice_payment}
+    template-language: ${WHATSAPP_TEMPLATE_LANGUAGE:en}
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD}
+  web-origin: ${WEB_ORIGIN:http://localhost:5173}

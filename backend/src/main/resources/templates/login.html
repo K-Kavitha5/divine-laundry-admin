@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"><head th:replace="~{fragments :: head('Sign in')}"></head>
+<body class="login-page"><main class="login-card">
+<span class="logo">D</span><p class="eyebrow">DIVINE LAUNDRY · ADMIN ONLY</p>
+<h1>Your shop.<br>Your workspace.</h1><p>Sign in to manage customers, clothes and billing.</p>
+<div class="alert error" th:if="${param.error}">Incorrect username or password.</div>
+<div class="alert" th:if="${param.logout}">You have signed out.</div>
+<form th:action="@{/login}" method="post"><label>Username<input name="username" autocomplete="username" required autofocus></label>
+<label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+<button type="submit">Sign in securely</button></form><small>No customer registration. Access is for the shop administrator.</small>
+</main></body></html>

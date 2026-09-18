@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"><head th:replace="~{fragments :: head('Add customer')}"></head><body>
+<aside th:replace="~{fragments :: sidebar}"></aside><div class="workspace"><header th:replace="~{fragments :: topbar('Add customer')}"></header><main>
+<p class="eyebrow">CUSTOMER DETAILS</p><h1>Add a new customer</h1><p>Save the customer, then select clothes for their order.</p>
+<form class="card form-card" th:action="@{/customers}" method="post" th:object="${customerForm}" data-lock-submit>
+<div th:replace="~{fragments :: errors}"></div>
+<div class="form-grid"><label>Full name<input th:field="*{name}" required maxlength="120" autocomplete="name"></label>
+<label>WhatsApp mobile number<input th:field="*{phone}" required maxlength="20" autocomplete="tel" placeholder="10-digit Indian mobile"></label>
+<label class="wide">Address<input th:field="*{addressLine}" maxlength="255" autocomplete="street-address"></label><label>Area<input th:field="*{area}" maxlength="120"></label></div>
+<p>Adding a phone number does not itself record consent for automated WhatsApp messages.</p>
+<div class="actions"><button type="submit">Save &amp; create order</button><a th:href="@{/customers}">Cancel</a></div></form></main></div></body></html>
