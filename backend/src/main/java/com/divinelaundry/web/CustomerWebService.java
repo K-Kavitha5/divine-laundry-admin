@@ -11,10 +11,15 @@ public class CustomerWebService {
     public CustomerWebService(CustomerRepository customers) { this.customers = customers; }
     @Transactional
     public Customer create(CustomerForm form) {
-        String phone = form.getPhone().replaceAll("[^0-9]", "");
-        if (phone.length() == 12 && phone.startsWith("91")) phone = phone.substring(2);
-        if (!phone.matches("[6-9][0-9]{9}")) throw new IllegalArgumentException("Enter a valid 10-digit Indian mobile number");
+        String phone = normalizePhone(form.getPhone());
         if (customers.existsByPhone(phone)) throw new IllegalArgumentException("This mobile number already has a customer. Select the existing customer.");
         return customers.saveAndFlush(new Customer(form.getName().trim(), phone, form.getAddressLine().trim(), form.getArea().trim()));
+    }
+
+    public String normalizePhone(String value) {
+        String phone = value == null ? "" : value.replaceAll("[^0-9]", "");
+        if (phone.length() == 12 && phone.startsWith("91")) phone = phone.substring(2);
+        if (!phone.matches("[6-9][0-9]{9}")) throw new IllegalArgumentException("Enter a valid 10-digit Indian mobile number");
+        return phone;
     }
 }

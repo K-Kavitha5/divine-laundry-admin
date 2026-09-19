@@ -11,7 +11,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ErrorResponse badRequest(RuntimeException ex) {
-        return new ErrorResponse(Instant.now(), ex.getMessage());
+        return new ErrorResponse(Instant.now(), safeMessage(ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -30,4 +30,12 @@ public class ApiExceptionHandler {
     }
 
     public record ErrorResponse(Instant timestamp, String message) {}
+
+    private static String safeMessage(String message) {
+        if (message == null || message.isBlank()
+                || message.matches("(?i).*\\b(sql|table|column|constraint|jdbc|hibernate|database)\\b.*")) {
+            return "The request could not be processed";
+        }
+        return message;
+    }
 }

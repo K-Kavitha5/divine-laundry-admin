@@ -9,6 +9,7 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import org.springframework.http.MediaType;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
@@ -77,6 +78,28 @@ class AdminWebFlowTest {
         assertThat(orders.findByOrderNumber(number).orElseThrow().getPaymentStatus().name()).isEqualTo("PAID");
         assertThat(createOrder(customer.getId(), service.getId(), UUID.randomUUID().toString())).isNotEqualTo(redirect);
         assertThat(orders.count()).isEqualTo(before + 2);
+    }
+
+    @Test void restOrderUsesAuthenticatedActorAndCustomerPhoneNormalization() throws Exception {
+        String digits = "9" + String.format("%09d", Math.floorMod(UUID.randomUUID().getLeastSignificantBits(), 1000000000L));
+        mvc.perform(post("/api/customers").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(("{\"name\":\"REST Customer\",\"phone\":\"+91 %s\",\"addressLine\":\"Test\",\"area\":\"Trichy\"}").formatted(digits)))
+                .andExpect(status().isCreated());
+        assertThat(customers.findByPhone(digits)).isPresent();
+
+        var customer = customers.findByPhone(digits).orElseThrow();
+        var service = catalog.findByActiveTrueOrderByCategoryAscNameAsc().stream()
+                .filter(item -> item.getCode().equals("SHIRT_IRON")).findFirst().orElseThrow();
+        String requestId = UUID.randomUUID().toString();
+        String body = ("{\"clientRequestId\":\"%s\",\"customerId\":%d,\"deliveryAt\":\"2027-01-15T18:00:00Z\",\"notes\":\"REST\",\"createdBy\":\"spoofed\",\"discount\":0,\"tax\":0,\"items\":[{\"serviceId\":%d,\"billableQuantity\":2,\"pieceCount\":2,\"noPrint\":false}]}")
+                .formatted(requestId, customer.getId(), service.getId());
+        var result = mvc.perform(post("/api/orders").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andReturn();
+        String orderNumber = result.getResponse().getContentAsString()
+                .replaceAll(".*\\\"orderNumber\\\":\\\"([^\\\"]+)\\\".*", "$1");
+        assertThat(orders.findByOrderNumber(orderNumber).orElseThrow().getCreatedBy()).isEqualTo("admin");
     }
 
     private String createOrder(Long customerId, Long serviceId, String requestId) throws Exception {

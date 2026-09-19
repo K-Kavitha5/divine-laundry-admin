@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.security.Principal;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -25,13 +26,13 @@ public class OrderController {
     @ResponseStatus(HttpStatus.CREATED)
     OrderResponse create(
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
-            @Valid @RequestBody CreateOrderRequest request) {
+            @Valid @RequestBody CreateOrderRequest request, Principal principal) {
         if (idempotencyKey != null && !idempotencyKey.equals(request.clientRequestId())) {
             throw new IllegalArgumentException("Idempotency key does not match the request ID");
         }
         OrderService.CreateOrderCommand command = new OrderService.CreateOrderCommand(
                 request.clientRequestId(), request.customerId(), request.deliveryAt(), request.notes(),
-                request.createdBy(), request.discount(), request.tax(),
+            principal.getName(), request.discount(), request.tax(),
                 request.items().stream().map(i -> new OrderService.CreateOrderItem(
                         i.serviceId(), i.billableQuantity(), i.pieceCount(), i.noPrint())).toList());
         return OrderResponse.from(orderService.create(command));
@@ -67,7 +68,7 @@ public class OrderController {
             @NotNull Long customerId,
             Instant deliveryAt,
             String notes,
-            @NotBlank String createdBy,
+            String createdBy,
             @PositiveOrZero BigDecimal discount,
             @PositiveOrZero BigDecimal tax,
             @NotEmpty List<@Valid CreateOrderItemRequest> items) {}

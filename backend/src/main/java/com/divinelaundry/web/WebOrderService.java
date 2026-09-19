@@ -11,12 +11,11 @@ import java.time.*;
 @Service
 public class WebOrderService {
     private final CustomerRepository customers;
-    private final LaundryServiceRepository catalog;
     private final OrderService orders;
     private final ZoneId zone;
-    public WebOrderService(CustomerRepository customers, LaundryServiceRepository catalog,
-            OrderService orders, @Value("${app.business-zone}") String zone) {
-        this.customers = customers; this.catalog = catalog; this.orders = orders; this.zone = ZoneId.of(zone);
+    public WebOrderService(CustomerRepository customers, OrderService orders,
+            @Value("${app.business-zone}") String zone) {
+        this.customers = customers; this.orders = orders; this.zone = ZoneId.of(zone);
     }
 
     @Transactional
@@ -27,16 +26,9 @@ public class WebOrderService {
         Instant delivery;
         try { delivery = LocalDateTime.parse(form.getDeliveryAt()).atZone(zone).toInstant(); }
         catch (java.time.DateTimeException ex) { throw new IllegalArgumentException("Enter a valid delivery date and time"); }
-        var lines = form.getItems().stream().map(line -> {
-            var item = catalog.findById(line.getServiceId()).filter(LaundryServiceItem::isActive)
-                    .orElseThrow(() -> new IllegalArgumentException("Select an active service"));
-            if (item.getUnitRate().signum() <= 0) throw new IllegalArgumentException("Price is not confirmed for " + item.getName());
-            if (item.getPricingUnit() == PricingUnit.PIECE &&
-                    (line.getQuantity().stripTrailingZeros().scale() > 0 || line.getQuantity().intValueExact() != line.getPieces())) {
-                throw new IllegalArgumentException("For per-piece services, quantity and physical piece count must match");
-            }
-            return new OrderService.CreateOrderItem(line.getServiceId(), line.getQuantity(), line.getPieces(), false);
-        }).toList();
+        var lines = form.getItems().stream()
+            .map(line -> new OrderService.CreateOrderItem(line.getServiceId(), line.getQuantity(), line.getPieces(), false))
+            .toList();
         if (form.getItems().stream().mapToInt(LineForm::getPieces).sum() > 500) {
             throw new IllegalArgumentException("Maximum 500 physical pieces per order in this milestone");
         }

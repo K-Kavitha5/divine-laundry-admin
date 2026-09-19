@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class OrderService {
@@ -36,7 +37,14 @@ public class OrderService {
 
     @Transactional
     public LaundryOrder create(CreateOrderCommand command) {
-        return orders.findByClientRequestId(command.clientRequestId()).orElseGet(() -> createNew(command));
+        LaundryOrder existing = orders.findByClientRequestId(command.clientRequestId()).orElse(null);
+        if (existing != null) {
+            if (!sameRequest(existing, command)) {
+                throw new IllegalArgumentException("This request ID was already used for a different order");
+            }
+            return existing;
+        }
+        return createNew(command);
     }
 
     private LaundryOrder createNew(CreateOrderCommand command) {
@@ -45,21 +53,72 @@ public class OrderService {
         if (command.items() == null || command.items().isEmpty()) {
             throw new IllegalArgumentException("At least one service item is required");
         }
+        if (command.createdBy() == null || command.createdBy().isBlank()) {
+            throw new IllegalArgumentException("Authenticated creator is required");
+        }
 
         LaundryOrder order = new LaundryOrder(
                 command.clientRequestId(), customer, command.deliveryAt(), command.notes(), command.createdBy());
 
         for (CreateOrderItem item : command.items()) {
-            LaundryServiceItem service = services.findById(item.serviceId())
-                    .filter(LaundryServiceItem::isActive)
-                    .orElseThrow(() -> new IllegalArgumentException("Active service not found: " + item.serviceId()));
+            LaundryServiceItem service = validateItem(item);
             order.addItem(new OrderItem(service, item.billableQuantity(), item.pieceCount(), item.noPrint()));
         }
 
-        order.calculateTotals(nullToZero(command.discount()), nullToZero(command.tax()));
+        BigDecimal discount = nullToZero(command.discount());
+        BigDecimal tax = nullToZero(command.tax());
+        if (discount.signum() < 0 || tax.signum() < 0) {
+            throw new IllegalArgumentException("Discount and tax cannot be negative");
+        }
+        order.calculateTotals(discount, tax);
         LaundryOrder saved = orders.save(order);
         saved.assignOrderNumber("SO-%d-%06d".formatted(currentYear(), saved.getId()));
         return saved;
+    }
+
+    private LaundryServiceItem validateItem(CreateOrderItem item) {
+        if (item == null || item.serviceId() == null || item.billableQuantity() == null
+                || item.billableQuantity().signum() <= 0 || item.pieceCount() <= 0) {
+            throw new IllegalArgumentException("Each order item needs an active service, positive quantity, and positive pieces");
+        }
+        LaundryServiceItem service = services.findById(item.serviceId())
+                .filter(LaundryServiceItem::isActive)
+                .orElseThrow(() -> new IllegalArgumentException("Select an active service for every order item"));
+        if (service.getUnitRate() == null || service.getUnitRate().signum() <= 0) {
+            throw new IllegalArgumentException("Selected service pricing is not configured");
+        }
+        if (service.getPricingUnit() == PricingUnit.PIECE
+                && (item.billableQuantity().stripTrailingZeros().scale() > 0
+                || item.billableQuantity().compareTo(BigDecimal.valueOf(item.pieceCount())) != 0)) {
+            throw new IllegalArgumentException("Per-piece quantity must match physical pieces");
+        }
+        return service;
+    }
+
+    private boolean sameRequest(LaundryOrder existing, CreateOrderCommand command) {
+        if (!Objects.equals(existing.getCreatedBy(), command.createdBy())
+                || !Objects.equals(existing.getNotes(), command.notes())
+                || !Objects.equals(existing.getDeliveryAt(), command.deliveryAt())
+                || nullToZero(existing.getDiscount()).compareTo(nullToZero(command.discount())) != 0
+                || nullToZero(existing.getTax()).compareTo(nullToZero(command.tax())) != 0) {
+            return false;
+        }
+        if (existing.getCustomer().getId() != null && !Objects.equals(existing.getCustomer().getId(), command.customerId())) {
+            return false;
+        }
+        if (command.items() == null) return false;
+        List<OrderItem> existingItems = existing.getItems();
+        if (existingItems.size() != command.items().size()) return false;
+        for (int index = 0; index < existingItems.size(); index++) {
+            CreateOrderItem requested = command.items().get(index);
+            LaundryServiceItem service = services.findById(requested.serviceId()).orElse(null);
+            OrderItem saved = existingItems.get(index);
+            if (service == null || !Objects.equals(saved.getServiceCode(), service.getCode())
+                    || saved.getBillableQuantity().compareTo(requested.billableQuantity()) != 0
+                    || saved.getPieceCount() != requested.pieceCount()
+                    || saved.isNoPrint() != requested.noPrint()) return false;
+        }
+        return true;
     }
 
     @Transactional

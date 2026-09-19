@@ -2,6 +2,7 @@ package com.divinelaundry.api;
 
 import com.divinelaundry.domain.Customer;
 import com.divinelaundry.repository.CustomerRepository;
+import com.divinelaundry.web.CustomerWebService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -13,24 +14,33 @@ import java.util.List;
 @RequestMapping("/api/customers")
 public class CustomerController {
     private final CustomerRepository customers;
+    private final CustomerWebService customerService;
 
-    public CustomerController(CustomerRepository customers) {
+    public CustomerController(CustomerRepository customers, CustomerWebService customerService) {
         this.customers = customers;
+        this.customerService = customerService;
     }
 
     @GetMapping
     List<CustomerResponse> search(@RequestParam(defaultValue = "") String q) {
-        return customers.findTop30ByNameContainingIgnoreCaseOrPhoneContainingOrderByNameAsc(q, q)
+        String phoneQuery = q;
+        try {
+            phoneQuery = customerService.normalizePhone(q);
+        } catch (IllegalArgumentException ignored) {
+            // Name searches should retain the original query for both repository predicates.
+        }
+        return customers.findTop30ByNameContainingIgnoreCaseOrPhoneContainingOrderByNameAsc(q, phoneQuery)
                 .stream().map(CustomerResponse::from).toList();
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     CustomerResponse create(@Valid @RequestBody CustomerRequest request) {
-        if (customers.existsByPhone(request.phone())) {
+        String phone = customerService.normalizePhone(request.phone());
+        if (customers.existsByPhone(phone)) {
             throw new IllegalArgumentException("A customer with this phone number already exists");
         }
-        Customer customer = new Customer(request.name(), request.phone(), request.addressLine(), request.area());
+        Customer customer = new Customer(request.name().trim(), phone, request.addressLine(), request.area());
         customer.update(request.name(), request.alternatePhone(), request.email(), request.addressLine(), request.area(), request.notes());
         return CustomerResponse.from(customers.save(customer));
     }
