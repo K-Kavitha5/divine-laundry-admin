@@ -11,5 +11,6 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     Optional<Customer> lockForOrder(@org.springframework.data.repository.query.Param("id") Long id);
     Optional<Customer> findByPhone(String phone);
     boolean existsByPhone(String phone);
+    List<Customer> findByActiveTrueOrderByNameAsc();
     List<Customer> findTop30ByNameContainingIgnoreCaseOrPhoneContainingOrderByNameAsc(String name, String phone);
 }

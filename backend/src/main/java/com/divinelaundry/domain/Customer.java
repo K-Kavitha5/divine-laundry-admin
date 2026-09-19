@@ -57,13 +57,15 @@ public class Customer {
     public boolean isActive() { return active; }
     public Instant getCreatedAt() { return createdAt; }
 
-    public void update(String name, String alternatePhone, String email, String addressLine, String area, String notes) {
+    public void update(String name, String phone, String alternatePhone, String email, String addressLine, String area, String notes, boolean active) {
         this.name = name;
+        this.phone = phone;
         this.alternatePhone = alternatePhone;
         this.email = email;
         this.addressLine = addressLine;
         this.area = area;
         this.notes = notes;
+        this.active = active;
     }
 }
 

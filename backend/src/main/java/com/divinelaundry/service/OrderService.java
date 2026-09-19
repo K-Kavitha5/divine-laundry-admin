@@ -50,6 +50,9 @@ public class OrderService {
     private LaundryOrder createNew(CreateOrderCommand command) {
         Customer customer = customers.findById(command.customerId())
                 .orElseThrow(() -> new IllegalArgumentException("Customer not found"));
+        if (!customer.isActive()) {
+            throw new IllegalStateException("Inactive customers cannot receive new orders");
+        }
         if (command.items() == null || command.items().isEmpty()) {
             throw new IllegalArgumentException("At least one service item is required");
         }

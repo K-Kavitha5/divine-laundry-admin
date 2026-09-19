@@ -41,7 +41,7 @@ public class CustomerController {
             throw new IllegalArgumentException("A customer with this phone number already exists");
         }
         Customer customer = new Customer(request.name().trim(), phone, request.addressLine(), request.area());
-        customer.update(request.name(), request.alternatePhone(), request.email(), request.addressLine(), request.area(), request.notes());
+        customer.update(request.name(), phone, request.alternatePhone(), request.email(), request.addressLine(), request.area(), request.notes(), true);
         return CustomerResponse.from(customers.save(customer));
     }
 

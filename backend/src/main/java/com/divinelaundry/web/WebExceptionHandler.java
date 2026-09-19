@@ -12,4 +12,11 @@ public class WebExceptionHandler {
         model.addAttribute("message", ex.getMessage());
         return "error";
     }
+
+    @ExceptionHandler(CustomerWebService.CustomerNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    String notFound(Model model) {
+        model.addAttribute("message", "Customer not found");
+        return "error";
+    }
 }

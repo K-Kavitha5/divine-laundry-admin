@@ -24,6 +24,8 @@ public interface LaundryOrderRepository extends JpaRepository<LaundryOrder, Long
 
     @EntityGraph(attributePaths = {"customer", "items"})
     List<LaundryOrder> findByCustomerIdAndWorkStatusInOrderByPlacedAtDesc(Long customerId, Collection<OrderStatus> statuses);
+        @EntityGraph(attributePaths = {"customer", "items"})
+        List<LaundryOrder> findByCustomerIdOrderByPlacedAtDesc(Long customerId);
 
     @EntityGraph(attributePaths = {"customer", "items"})
     List<LaundryOrder> findByWorkStatusInOrderByDeliveryAtAsc(Collection<OrderStatus> statuses);

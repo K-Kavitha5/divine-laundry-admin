@@ -67,13 +67,48 @@ public class AdminWebController {
 
     @GetMapping("/customers")
     String customers(@RequestParam(defaultValue = "") String q, Model model) {
+        String phoneQuery;
+        try { phoneQuery = customerService.normalizePhone(q); }
+        catch (IllegalArgumentException ignored) { phoneQuery = q; }
+        var rows = customers.findTop30ByNameContainingIgnoreCaseOrPhoneContainingOrderByNameAsc(q, phoneQuery);
         model.addAttribute("q", q);
-        model.addAttribute("customers", customers.findTop30ByNameContainingIgnoreCaseOrPhoneContainingOrderByNameAsc(q, q));
+        model.addAttribute("customers", customerService.listRows(rows));
         return "customers";
     }
 
     @GetMapping("/customers/new")
     String newCustomer(Model model) { model.addAttribute("customerForm", new CustomerForm()); return "customer-form"; }
+
+    @GetMapping("/customers/{id}")
+    String customerDetail(@PathVariable Long id, Model model) {
+        model.addAttribute("profile", customerService.profile(id));
+        return "customer-detail";
+    }
+
+    @GetMapping("/customers/{id}/edit")
+    String editCustomer(@PathVariable Long id, Model model) {
+        var customer = customerService.profile(id).customer();
+        model.addAttribute("customerForm", customerForm(customer));
+        model.addAttribute("editMode", true);
+        model.addAttribute("customerId", id);
+        return "customer-form";
+    }
+
+    @PostMapping("/customers/{id}")
+    String updateCustomer(@PathVariable Long id, @Valid @ModelAttribute CustomerForm customerForm,
+            BindingResult errors, Model model, RedirectAttributes redirect) {
+        if (!errors.hasErrors()) {
+            try {
+                customerService.update(id, customerForm);
+                redirect.addFlashAttribute("success", "Customer details updated.");
+                return "redirect:/customers/{id}";
+            } catch (IllegalArgumentException ex) { errors.reject("invalid", ex.getMessage()); }
+            catch (DataIntegrityViolationException ex) { errors.reject("duplicate", "This mobile number already exists."); }
+        }
+        model.addAttribute("editMode", true);
+        model.addAttribute("customerId", id);
+        return "customer-form";
+    }
 
     @PostMapping("/customers")
     String createCustomer(@Valid @ModelAttribute CustomerForm customerForm, BindingResult errors, Model model) {
@@ -98,7 +133,7 @@ public class AdminWebController {
     }
 
     private void populateOrder(Model model) {
-        model.addAttribute("customers", customers.findAll(org.springframework.data.domain.Sort.by("name")));
+        model.addAttribute("customers", customers.findByActiveTrueOrderByNameAsc());
         model.addAttribute("catalog", catalog.findByActiveTrueOrderByCategoryAscNameAsc());
     }
 
@@ -167,4 +202,17 @@ public class AdminWebController {
 
     @GetMapping("/services")
     String services(Model model) { model.addAttribute("catalog", catalog.findByActiveTrueOrderByCategoryAscNameAsc()); return "services"; }
+
+    private CustomerForm customerForm(Customer customer) {
+        var form = new CustomerForm();
+        form.setName(customer.getName());
+        form.setPhone(customer.getPhone());
+        form.setAlternatePhone(customer.getAlternatePhone());
+        form.setEmail(customer.getEmail());
+        form.setAddressLine(customer.getAddressLine());
+        form.setArea(customer.getArea());
+        form.setNotes(customer.getNotes());
+        form.setActive(customer.isActive());
+        return form;
+    }
 }
