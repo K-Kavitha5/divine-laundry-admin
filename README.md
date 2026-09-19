@@ -12,7 +12,7 @@ Admin-only laundry operations platform inspired by the client's existing workflo
 
 ## Project layout
 
-- `backend/` - Java 17 + Spring Boot REST API
+- `backend/` - Java 25 + Spring Boot REST API
 - `frontend/` - React admin website source
 - `prototype/` - dependency-free interactive UI preview
 - `docs/` - agreed scope and business rules

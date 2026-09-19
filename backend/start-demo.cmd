@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 where java >nul 2>&1
 if errorlevel 1 (
-  echo Java JDK 17 or newer is required. Install it and reopen this window.
+  echo Java JDK 25 or newer is required. Install it and reopen this window.
   pause
   exit /b 1
 )

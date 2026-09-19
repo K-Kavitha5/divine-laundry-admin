@@ -23,7 +23,7 @@ read **THYMELEAF-VERIFICATION.md**.
 - Dashboard repository queries and frontend response fields were checked against the connected API contract.
 - Automatic invoice-finalisation and payment-recorded events were added so website and future app requests use the same server-side WhatsApp flow.
 - WhatsApp media upload and approved image-template payloads have an isolated local HTTP integration test, including Indian phone normalization and provider-message ID capture.
-- The production WhatsApp HTTP client compiled with Java 17 and passed a local two-step media-upload/template-send smoke test against an in-memory HTTP server.
+- The production WhatsApp HTTP client compiled with Java 25 and passed a local two-step media-upload/template-send smoke test against an in-memory HTTP server.
 - Invoice/payment PNG generation has a test for image dimensions and an amount-locked UPI URI; zero-balance rendering omits the payment QR and shows paid status.
 - WhatsApp invoice and payment messages use distinct deterministic deduplication keys, and successful retries return the original message instead of sending another copy.
 - WhatsApp/UPI environment settings were checked to ensure the access token and verified UPI ID are not stored in frontend source.

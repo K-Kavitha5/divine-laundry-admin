@@ -30,7 +30,7 @@ management page. This milestone is not a production launch.
 ## Quick local test on Windows — no MySQL required
 
 1. Extract this ZIP into a NEW folder. Keep your previous project unchanged.
-2. Install Java JDK 17+ and Apache Maven. Check `java -version` and `mvn -version`
+2. Install Java JDK 25+ and Apache Maven. Check `java -version` and `mvn -version`
    in a newly opened terminal. The first build requires internet access.
 3. Double-click `backend/start-demo.cmd`, or open a terminal in `backend` and run:
 

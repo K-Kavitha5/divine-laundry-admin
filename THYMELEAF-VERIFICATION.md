@@ -2,7 +2,7 @@
 
 ## Passed in this environment
 
-- Java 17 compiler parser: 56 main/test source files, zero syntax errors.
+- Java 25 compiler parser: 56 main/test source files, zero syntax errors.
   This was parse-only, not dependency resolution or type checking.
 - Node `--check`: new `static/assets/admin.js` parses successfully.
 - XML parser: Maven POM is well formed.
@@ -35,7 +35,7 @@ submission, another order for the same customer, invoice HTML/PNG endpoints,
 overpayment rejection and payment replay. The existing domain/service tests are
 retained. These tests are authored, not reported as passed.
 
-Run `mvn test` and `mvn package` in `backend` on a computer with JDK 17+ and Maven.
+Run `mvn test` and `mvn package` in `backend` on a computer with JDK 25+ and Maven.
 Then follow `START-HERE-THYMELEAF.md` for local demo and fresh-MySQL checks.
 
 ## Scope and notable changes

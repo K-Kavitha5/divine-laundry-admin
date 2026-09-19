@@ -4,7 +4,7 @@ The offline prototype can now test customer creation, item selection, unique bil
 
 ## Required software
 
-- Java 17 or newer
+- Java 25 or newer
 - Maven 3.9 or newer
 - Node.js 20 or newer
 
