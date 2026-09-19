@@ -7,6 +7,8 @@ public class OrderForm {
     private String requestId = java.util.UUID.randomUUID().toString();
     @NotNull
     private Long customerId = null;
+    @Size(max = 30)
+    private String pickupAt = "";
     @NotBlank @Size(max = 30)
     private String deliveryAt = "";
     @Size(max = 800)
@@ -21,6 +23,8 @@ public class OrderForm {
     public void setRequestId(String value) { this.requestId = value; }
     public Long getCustomerId() { return customerId; }
     public void setCustomerId(Long value) { this.customerId = value; }
+    public String getPickupAt() { return pickupAt; }
+    public void setPickupAt(String value) { this.pickupAt = value; }
     public String getDeliveryAt() { return deliveryAt; }
     public void setDeliveryAt(String value) { this.deliveryAt = value; }
     public String getNotes() { return notes; }

@@ -40,6 +40,9 @@ public class LaundryOrder {
     @Column(name = "placed_at", nullable = false)
     private Instant placedAt = Instant.now();
 
+    @Column(name = "pickup_at")
+    private Instant pickupAt;
+
     @Column(name = "delivery_at")
     private Instant deliveryAt;
 
@@ -73,11 +76,18 @@ public class LaundryOrder {
     protected LaundryOrder() {}
 
     public LaundryOrder(String clientRequestId, Customer customer, Instant deliveryAt, String notes, String createdBy) {
+        this(clientRequestId, customer, null, deliveryAt, notes, createdBy);
+    }
+
+    public LaundryOrder(String clientRequestId, Customer customer, Instant pickupAt, Instant deliveryAt,
+            String notes, String createdBy) {
         this.clientRequestId = clientRequestId;
         this.customer = customer;
+        this.pickupAt = pickupAt;
         this.deliveryAt = deliveryAt;
         this.notes = notes;
         this.createdBy = createdBy;
+        validateSchedule(pickupAt, deliveryAt);
     }
 
     public void addItem(OrderItem item) {
@@ -130,6 +140,12 @@ public class LaundryOrder {
         this.updatedAt = Instant.now();
     }
 
+    private static void validateSchedule(Instant pickupAt, Instant deliveryAt) {
+        if (pickupAt != null && deliveryAt != null && pickupAt.isAfter(deliveryAt)) {
+            throw new IllegalArgumentException("Pickup date and time cannot be after delivery date and time");
+        }
+    }
+
     public Long getId() { return id; }
     public String getOrderNumber() { return orderNumber; }
     public String getInvoiceNumber() { return invoiceNumber; }
@@ -138,6 +154,7 @@ public class LaundryOrder {
     public OrderStatus getWorkStatus() { return workStatus; }
     public PaymentStatus getPaymentStatus() { return paymentStatus; }
     public Instant getPlacedAt() { return placedAt; }
+    public Instant getPickupAt() { return pickupAt; }
     public Instant getDeliveryAt() { return deliveryAt; }
     public String getNotes() { return notes; }
     public BigDecimal getSubtotal() { return subtotal; }

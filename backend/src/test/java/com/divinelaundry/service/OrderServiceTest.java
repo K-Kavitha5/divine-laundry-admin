@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -141,6 +142,33 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.create(command(1, 1, 1, new BigDecimal("11"), BigDecimal.ZERO)))
             .isInstanceOf(IllegalArgumentException.class);
         verify(orders, never()).save(any());
+        }
+
+        @Test
+        void createsOrderWithPickupAndDeliveryTimes() {
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        CustomerRepository customers = mock(CustomerRepository.class);
+        LaundryServiceRepository services = mock(LaundryServiceRepository.class);
+        OrderStatusHistoryRepository history = mock(OrderStatusHistoryRepository.class);
+        OrderService orderService = new OrderService(orders, customers, services, history, mock(ApplicationEventPublisher.class));
+        Customer customer = new Customer("Test Customer", "9876543210", null, "Trichy");
+        LaundryServiceItem service = new LaundryServiceItem("SHIRT", "Shirt", "Ironing", PricingUnit.PIECE, BigDecimal.TEN);
+        when(customers.findById(1L)).thenReturn(Optional.of(customer));
+        when(services.findById(1L)).thenReturn(Optional.of(service));
+        when(orders.save(any(LaundryOrder.class))).thenAnswer(invocation -> {
+            LaundryOrder saved = invocation.getArgument(0);
+            saved.assignOrderNumber("SO-2027-000001");
+            return saved;
+        });
+
+        Instant pickup = Instant.parse("2027-01-15T10:00:00Z");
+        Instant delivery = Instant.parse("2027-01-15T18:00:00Z");
+        LaundryOrder saved = orderService.create(new OrderService.CreateOrderCommand(
+            "schedule-request", 1L, pickup, delivery, null, "admin", BigDecimal.ZERO, BigDecimal.ZERO,
+            List.of(new OrderService.CreateOrderItem(1L, BigDecimal.ONE, 1, false))));
+
+        assertThat(saved.getPickupAt()).isEqualTo(pickup);
+        assertThat(saved.getDeliveryAt()).isEqualTo(delivery);
         }
 
         @Test

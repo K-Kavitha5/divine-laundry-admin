@@ -5,9 +5,10 @@
 <div class="page-heading"><div><p class="eyebrow">YOUR WORKSPACE</p><h1>A fresh start, every day.</h1><p>Real customers. Saved orders. Clear billing.</p></div><a class="button" th:href="@{/orders/new}">＋ Create order</a></div>
 <div class="stats"><article class="card"><p>Customer records</p><strong th:text="${customerCount}">0</strong></article><article class="card"><p>Total orders</p><strong th:text="${orderCount}">0</strong></article><article class="card"><p>Payment QR</p><b th:text="${upiConfigured ? 'Configured' : 'Not configured'}"></b><p>Bank settlement is checked manually.</p></article></div>
 <section class="card"><div class="section-title"><h2>Recent orders</h2><span>Latest 50 · all work statuses</span></div>
-<div class="table-scroll"><table><thead><tr><th>Order</th><th>Customer</th><th>Delivery</th><th>Work</th><th>Payment</th><th>Total</th></tr></thead><tbody>
+<div class="table-scroll"><table><thead><tr><th>Order</th><th>Customer</th><th>Pickup</th><th>Delivery</th><th>Work</th><th>Payment</th><th>Total</th></tr></thead><tbody>
 <tr th:each="o : ${recentOrders}"><td><a th:href="@{/orders/{n}(n=${o.orderNumber})}" th:text="${o.orderNumber}"></a></td><td><b th:text="${o.customer.name}"></b><small th:text="${o.customer.phone}"></small></td>
+<td th:text="${o.pickupAt == null ? 'Not set' : #temporals.format(o.pickupAt.atZone(businessZone), 'dd MMM yyyy, hh:mm a')}"></td>
 <td th:text="${o.deliveryAt == null ? 'Not set' : #temporals.format(o.deliveryAt.atZone(businessZone), 'dd MMM yyyy, hh:mm a')}"></td>
 <td th:text="${o.workStatus}"></td><td><span class="badge" th:text="${o.paymentStatus}"></span></td><td th:text="|₹${o.total}|"></td></tr>
-<tr th:if="${#lists.isEmpty(recentOrders)}"><td colspan="6" class="empty">No orders yet. Create a customer, then book their first order.</td></tr>
+<tr th:if="${#lists.isEmpty(recentOrders)}"><td colspan="7" class="empty">No orders yet. Create a customer, then book their first order.</td></tr>
 </tbody></table></div></section></main></div></body></html>

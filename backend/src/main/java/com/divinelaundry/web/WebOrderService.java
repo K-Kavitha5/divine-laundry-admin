@@ -23,6 +23,7 @@ public class WebOrderService {
         // Serialize submissions for one customer across tabs/app instances. The unique
         // request ID still allows the same customer to have multiple legitimate orders.
         customers.lockForOrder(form.getCustomerId()).orElseThrow(() -> new IllegalArgumentException("Customer not found"));
+        Instant pickup = parseOptional(form.getPickupAt(), "pickup");
         Instant delivery;
         try { delivery = LocalDateTime.parse(form.getDeliveryAt()).atZone(zone).toInstant(); }
         catch (java.time.DateTimeException ex) { throw new IllegalArgumentException("Enter a valid delivery date and time"); }
@@ -33,8 +34,14 @@ public class WebOrderService {
             throw new IllegalArgumentException("Maximum 500 physical pieces per order in this milestone");
         }
         var order = orders.create(new OrderService.CreateOrderCommand(form.getRequestId(), form.getCustomerId(),
-                delivery, form.getNotes(), username, form.getDiscount(), form.getTax(), lines));
+            pickup, delivery, form.getNotes(), username, form.getDiscount(), form.getTax(), lines));
         orders.finalizeInvoice(order.getOrderNumber());
         return order.getOrderNumber();
+    }
+
+    private Instant parseOptional(String value, String label) {
+        if (value == null || value.isBlank()) return null;
+        try { return LocalDateTime.parse(value).atZone(zone).toInstant(); }
+        catch (java.time.DateTimeException ex) { throw new IllegalArgumentException("Enter a valid " + label + " date and time"); }
     }
 }

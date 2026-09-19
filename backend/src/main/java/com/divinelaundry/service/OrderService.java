@@ -65,7 +65,8 @@ public class OrderService {
         }
 
         LaundryOrder order = new LaundryOrder(
-                command.clientRequestId(), customer, command.deliveryAt(), command.notes(), command.createdBy());
+            command.clientRequestId(), customer, command.pickupAt(), command.deliveryAt(),
+            command.notes(), command.createdBy());
 
         for (CreateOrderItem item : command.items()) {
             LaundryServiceItem service = validateItem(item);
@@ -105,6 +106,7 @@ public class OrderService {
     private boolean sameRequest(LaundryOrder existing, CreateOrderCommand command) {
         if (!Objects.equals(existing.getCreatedBy(), command.createdBy())
                 || !Objects.equals(existing.getNotes(), command.notes())
+                || !Objects.equals(existing.getPickupAt(), command.pickupAt())
                 || !Objects.equals(existing.getDeliveryAt(), command.deliveryAt())
                 || nullToZero(existing.getDiscount()).compareTo(nullToZero(command.discount())) != 0
                 || nullToZero(existing.getTax()).compareTo(nullToZero(command.tax())) != 0) {
@@ -195,12 +197,19 @@ public class OrderService {
     public record CreateOrderCommand(
             String clientRequestId,
             Long customerId,
+            Instant pickupAt,
             Instant deliveryAt,
             String notes,
             String createdBy,
             BigDecimal discount,
             BigDecimal tax,
-            List<CreateOrderItem> items) {}
+            List<CreateOrderItem> items) {
+        public CreateOrderCommand(String clientRequestId, Long customerId, Instant deliveryAt,
+                String notes, String createdBy, BigDecimal discount, BigDecimal tax,
+                List<CreateOrderItem> items) {
+            this(clientRequestId, customerId, null, deliveryAt, notes, createdBy, discount, tax, items);
+        }
+    }
 
     public record CreateOrderItem(
             Long serviceId,

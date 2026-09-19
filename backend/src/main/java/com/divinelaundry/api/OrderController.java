@@ -31,7 +31,7 @@ public class OrderController {
             throw new IllegalArgumentException("Idempotency key does not match the request ID");
         }
         OrderService.CreateOrderCommand command = new OrderService.CreateOrderCommand(
-                request.clientRequestId(), request.customerId(), request.deliveryAt(), request.notes(),
+            request.clientRequestId(), request.customerId(), request.pickupAt(), request.deliveryAt(), request.notes(),
             principal.getName(), request.discount(), request.tax(),
                 request.items().stream().map(i -> new OrderService.CreateOrderItem(
                         i.serviceId(), i.billableQuantity(), i.pieceCount(), i.noPrint())).toList());
@@ -59,13 +59,14 @@ public class OrderController {
     }
 
     @PatchMapping("/{orderNumber}/status")
-    OrderResponse changeStatus(@PathVariable String orderNumber, @RequestBody StatusRequest request) {
-        return OrderResponse.from(orderService.changeStatus(orderNumber, request.status()));
+    OrderResponse changeStatus(@PathVariable String orderNumber, @RequestBody StatusRequest request, Principal principal) {
+        return OrderResponse.from(orderService.changeStatus(orderNumber, request.status(), principal.getName()));
     }
 
     public record CreateOrderRequest(
             @NotBlank String clientRequestId,
             @NotNull Long customerId,
+            Instant pickupAt,
             Instant deliveryAt,
             String notes,
             String createdBy,
@@ -92,13 +93,13 @@ public class OrderController {
 
     public record OrderResponse(
             String orderNumber, String invoiceNumber, Long customerId, String customerName,
-            String status, String paymentStatus, Instant placedAt, Instant deliveryAt,
+            String status, String paymentStatus, Instant placedAt, Instant pickupAt, Instant deliveryAt,
             BigDecimal subtotal, BigDecimal discount, BigDecimal tax, BigDecimal roundOff,
             BigDecimal total, List<OrderItemResponse> items) {
         static OrderResponse from(LaundryOrder o) {
             return new OrderResponse(o.getOrderNumber(), o.getInvoiceNumber(), o.getCustomer().getId(),
                     o.getCustomer().getName(), o.getWorkStatus().name(), o.getPaymentStatus().name(),
-                    o.getPlacedAt(), o.getDeliveryAt(), o.getSubtotal(), o.getDiscount(), o.getTax(),
+                    o.getPlacedAt(), o.getPickupAt(), o.getDeliveryAt(), o.getSubtotal(), o.getDiscount(), o.getTax(),
                     o.getRoundOff(), o.getTotal(), o.getItems().stream().map(OrderItemResponse::from).toList());
         }
     }
