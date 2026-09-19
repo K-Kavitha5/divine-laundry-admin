@@ -3,11 +3,15 @@ package com.divinelaundry.service;
 import com.divinelaundry.domain.Customer;
 import com.divinelaundry.domain.LaundryOrder;
 import com.divinelaundry.domain.LaundryServiceItem;
+import com.divinelaundry.domain.OrderStatus;
+import com.divinelaundry.domain.OrderStatusHistory;
 import com.divinelaundry.domain.PricingUnit;
 import com.divinelaundry.repository.CustomerRepository;
 import com.divinelaundry.repository.LaundryOrderRepository;
 import com.divinelaundry.repository.LaundryServiceRepository;
+import com.divinelaundry.repository.OrderStatusHistoryRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import java.math.BigDecimal;
 import java.util.List;
@@ -23,7 +27,8 @@ class OrderServiceTest {
         CustomerRepository customers = mock(CustomerRepository.class);
         LaundryServiceRepository services = mock(LaundryServiceRepository.class);
         ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
-        OrderService orderService = new OrderService(orders, customers, services, events);
+        OrderStatusHistoryRepository history = mock(OrderStatusHistoryRepository.class);
+        OrderService orderService = new OrderService(orders, customers, services, history, events);
         LaundryOrder existing = new LaundryOrder(
                 "same-browser-request", new Customer("Test Customer", "9876543210", null, "Trichy"),
                 null, null, "admin");
@@ -46,7 +51,8 @@ class OrderServiceTest {
         CustomerRepository customers = mock(CustomerRepository.class);
         LaundryServiceRepository services = mock(LaundryServiceRepository.class);
         ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
-        OrderService orderService = new OrderService(orders, customers, services, events);
+        OrderStatusHistoryRepository history = mock(OrderStatusHistoryRepository.class);
+        OrderService orderService = new OrderService(orders, customers, services, history, events);
         LaundryOrder order = mock(LaundryOrder.class);
         when(order.getInvoiceNumber()).thenReturn(null);
         when(order.getId()).thenReturn(42L);
@@ -60,11 +66,65 @@ class OrderServiceTest {
     }
 
         @Test
+        void rejectsInvalidStatusTransitionsAndDoesNotCreateHistory() {
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        CustomerRepository customers = mock(CustomerRepository.class);
+        LaundryServiceRepository services = mock(LaundryServiceRepository.class);
+        OrderStatusHistoryRepository history = mock(OrderStatusHistoryRepository.class);
+        OrderService orderService = new OrderService(orders, customers, services, history, mock(ApplicationEventPublisher.class));
+        LaundryOrder order = new LaundryOrder("status-invalid", new Customer("Test Customer", "9876543210", null, "Trichy"), null, null, "admin");
+        when(orders.findByOrderNumber("SO-2026-000001")).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> orderService.changeStatus("SO-2026-000001", OrderStatus.DELIVERED, "admin"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("RECEIVED -> DELIVERED");
+        verify(history, never()).save(any());
+        }
+
+        @Test
+        void validTransitionsPersistHistoryWithAuthenticatedActor() {
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        CustomerRepository customers = mock(CustomerRepository.class);
+        LaundryServiceRepository services = mock(LaundryServiceRepository.class);
+        OrderStatusHistoryRepository history = mock(OrderStatusHistoryRepository.class);
+        when(history.save(any(OrderStatusHistory.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        OrderService orderService = new OrderService(orders, customers, services, history, mock(ApplicationEventPublisher.class));
+        LaundryOrder order = new LaundryOrder("status-valid", new Customer("Test Customer", "9876543210", null, "Trichy"), null, null, "admin");
+        when(orders.findByOrderNumber("SO-2026-000003")).thenReturn(Optional.of(order));
+
+        LaundryOrder updated = orderService.changeStatus("SO-2026-000003", OrderStatus.WASHING, "supervisor");
+
+        assertThat(updated.getWorkStatus()).isEqualTo(OrderStatus.WASHING);
+        ArgumentCaptor<OrderStatusHistory> saved = ArgumentCaptor.forClass(OrderStatusHistory.class);
+        verify(history).save(saved.capture());
+        assertThat(saved.getValue().getOldStatus()).isEqualTo(OrderStatus.RECEIVED);
+        assertThat(saved.getValue().getNewStatus()).isEqualTo(OrderStatus.WASHING);
+        assertThat(saved.getValue().getChangedBy()).isEqualTo("supervisor");
+        }
+
+        @Test
+        void sameStatusUpdateIsRejected() {
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        CustomerRepository customers = mock(CustomerRepository.class);
+        LaundryServiceRepository services = mock(LaundryServiceRepository.class);
+        OrderStatusHistoryRepository history = mock(OrderStatusHistoryRepository.class);
+        OrderService orderService = new OrderService(orders, customers, services, history, mock(ApplicationEventPublisher.class));
+        LaundryOrder order = new LaundryOrder("status-same", new Customer("Test Customer", "9876543210", null, "Trichy"), null, null, "admin");
+        when(orders.findByOrderNumber("SO-2026-000004")).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> orderService.changeStatus("SO-2026-000004", OrderStatus.RECEIVED, "admin"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("already in RECEIVED");
+        verify(history, never()).save(any());
+        }
+
+        @Test
         void rejectsInvalidItemsAndMoneyBeforeSaving() {
         LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
         CustomerRepository customers = mock(CustomerRepository.class);
         LaundryServiceRepository services = mock(LaundryServiceRepository.class);
-        OrderService orderService = new OrderService(orders, customers, services, mock(ApplicationEventPublisher.class));
+        OrderStatusHistoryRepository history = mock(OrderStatusHistoryRepository.class);
+        OrderService orderService = new OrderService(orders, customers, services, history, mock(ApplicationEventPublisher.class));
         Customer customer = new Customer("Test Customer", "9876543210", null, "Trichy");
         LaundryServiceItem service = new LaundryServiceItem("SHIRT", "Shirt", "Ironing", PricingUnit.PIECE, BigDecimal.TEN);
         when(customers.findById(1L)).thenReturn(Optional.of(customer));
@@ -88,7 +148,8 @@ class OrderServiceTest {
         LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
         CustomerRepository customers = mock(CustomerRepository.class);
         LaundryServiceRepository services = mock(LaundryServiceRepository.class);
-        OrderService orderService = new OrderService(orders, customers, services, mock(ApplicationEventPublisher.class));
+        OrderStatusHistoryRepository history = mock(OrderStatusHistoryRepository.class);
+        OrderService orderService = new OrderService(orders, customers, services, history, mock(ApplicationEventPublisher.class));
         when(customers.findById(1L)).thenReturn(Optional.of(new Customer("Test", "9876543210", null, null)));
         LaundryServiceItem inactive = mock(LaundryServiceItem.class);
         when(inactive.isActive()).thenReturn(false);
@@ -107,7 +168,8 @@ class OrderServiceTest {
         LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
         CustomerRepository customers = mock(CustomerRepository.class);
         LaundryServiceRepository services = mock(LaundryServiceRepository.class);
-        OrderService orderService = new OrderService(orders, customers, services, mock(ApplicationEventPublisher.class));
+        OrderStatusHistoryRepository history = mock(OrderStatusHistoryRepository.class);
+        OrderService orderService = new OrderService(orders, customers, services, history, mock(ApplicationEventPublisher.class));
         LaundryOrder existing = new LaundryOrder(
             "same-browser-request", new Customer("Test Customer", "9876543210", null, "Trichy"),
             null, "original", "admin");

@@ -106,6 +106,15 @@ public class LaundryOrder {
     }
 
     public void changeStatus(OrderStatus status) {
+        if (status == null) {
+            throw new IllegalArgumentException("Status is required");
+        }
+        if (this.workStatus == status) {
+            throw new IllegalStateException("Order is already in " + status + ".");
+        }
+        if (!OrderStatus.isValidTransition(this.workStatus, status)) {
+            throw new IllegalStateException("Invalid order status transition: " + this.workStatus + " -> " + status);
+        }
         this.workStatus = status;
         this.updatedAt = Instant.now();
     }

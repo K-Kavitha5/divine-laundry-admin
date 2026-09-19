@@ -4,6 +4,7 @@ import com.divinelaundry.domain.*;
 import com.divinelaundry.repository.CustomerRepository;
 import com.divinelaundry.repository.LaundryOrderRepository;
 import com.divinelaundry.repository.LaundryServiceRepository;
+import com.divinelaundry.repository.OrderStatusHistoryRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,16 +23,19 @@ public class OrderService {
     private final LaundryOrderRepository orders;
     private final CustomerRepository customers;
     private final LaundryServiceRepository services;
+    private final OrderStatusHistoryRepository statusHistory;
     private final ApplicationEventPublisher events;
 
     public OrderService(
             LaundryOrderRepository orders,
             CustomerRepository customers,
             LaundryServiceRepository services,
+            OrderStatusHistoryRepository statusHistory,
             ApplicationEventPublisher events) {
         this.orders = orders;
         this.customers = customers;
         this.services = services;
+        this.statusHistory = statusHistory;
         this.events = events;
     }
 
@@ -134,13 +138,34 @@ public class OrderService {
     }
 
     @Transactional
-    public LaundryOrder changeStatus(String orderNumber, OrderStatus status) {
+    public LaundryOrder changeStatus(String orderNumber, OrderStatus status, String changedBy) {
+        if (changedBy == null || changedBy.isBlank()) {
+            throw new IllegalStateException("Authenticated admin actor is required to change order status");
+        }
         LaundryOrder order = get(orderNumber);
-        if (order.getWorkStatus() == OrderStatus.CANCELLED || order.getWorkStatus() == OrderStatus.DELIVERED) {
+        OrderStatus previousStatus = order.getWorkStatus();
+        if (previousStatus == OrderStatus.CANCELLED || previousStatus == OrderStatus.DELIVERED) {
             throw new IllegalStateException("Completed or cancelled orders cannot be moved directly");
         }
+        if (status == null) {
+            throw new IllegalArgumentException("Status is required");
+        }
+        if (previousStatus == status) {
+            throw new IllegalStateException("Order is already in " + status + ".");
+        }
+        if (!OrderStatus.isValidTransition(previousStatus, status)) {
+            throw new IllegalStateException("Invalid order status transition: " + previousStatus + " -> " + status);
+        }
+
         order.changeStatus(status);
+        OrderStatusHistory history = new OrderStatusHistory(order, previousStatus, status, changedBy, null);
+        statusHistory.save(history);
         return order;
+    }
+
+    @Transactional
+    public LaundryOrder changeStatus(String orderNumber, OrderStatus status) {
+        return changeStatus(orderNumber, status, "SYSTEM");
     }
 
     @Transactional(readOnly = true)
