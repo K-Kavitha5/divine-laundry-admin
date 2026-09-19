@@ -5,6 +5,7 @@
 <div class="actions"><a class="button secondary" th:href="@{/orders/{n}/invoice(n=${order.orderNumber})}">View / print invoice</a><a class="button" th:href="@{/orders/{n}/invoice.png(n=${order.orderNumber})}">Download PNG</a></div></div>
 <div class="alert" th:if="${success}" th:text="${success}"></div>
 <div class="stats"><article class="card"><p>Total</p><strong th:text="|₹${order.total}|"></strong></article><article class="card"><p>Paid</p><strong th:text="|₹${summary.amountPaid}|"></strong></article><article class="card"><p>Balance</p><strong th:text="|₹${summary.balance}|"></strong></article></div>
+<article class="card"><p>Garment tags</p><strong th:text="|${tagCount} generated|"></strong><small th:text="|${printedTagCount} printed / reprinted|"></small></article>
 <section class="card"><div class="section-title"><h2>Order items</h2><span class="badge" th:text="${order.paymentStatus}"></span></div>
 <p><b>Invoice:</b> <span th:text="${order.invoiceNumber}"></span> · <b>Work:</b> <span th:text="${order.workStatus}"></span></p>
 <p><b>Pickup:</b> <span th:text="${order.pickupAt == null ? 'Not set' : #temporals.format(order.pickupAt.atZone(businessZone), 'dd MMM yyyy, hh:mm a')}"></span> · <b>Delivery:</b> <span th:text="${order.deliveryAt == null ? 'Not set' : #temporals.format(order.deliveryAt.atZone(businessZone), 'dd MMM yyyy, hh:mm a')}"></span></p>

@@ -20,22 +20,40 @@ public class TagService {
     @Transactional
     public List<GarmentTag> ensureTags(LaundryOrder order) {
         List<GarmentTag> existing = tags.findByOrder_IdOrderByOrderItem_IdAscPieceSequenceAsc(order.getId());
-        if (!existing.isEmpty()) return existing;
-
         List<GarmentTag> created = new ArrayList<>();
+        int itemPosition = 0;
         for (OrderItem item : order.getItems()) {
+            itemPosition++;
             if (item.isNoPrint()) continue;
             for (int sequence = 1; sequence <= item.getPieceCount(); sequence++) {
+                if (hasTag(existing, item, sequence)) continue;
                 String tagNumber = "%s-%06d-%02d".formatted(
-                        order.getOrderNumber().replace("SO-", "TAG-"), item.getId(), sequence);
+                        order.getOrderNumber().replace("SO-", "TAG-"), itemReference(item, itemPosition), sequence);
                 created.add(new GarmentTag(tagNumber, order, item, sequence));
             }
         }
-        return tags.saveAll(created);
+        if (created.isEmpty()) return existing;
+        List<GarmentTag> saved = tags.saveAll(created);
+        List<GarmentTag> complete = new ArrayList<>(existing);
+        complete.addAll(saved);
+        return complete;
     }
 
     @Transactional
     public void markPrinted(LaundryOrder order) {
-        ensureTags(order).forEach(GarmentTag::markPrinted);
+        List<GarmentTag> ensured = ensureTags(order);
+        ensured.forEach(GarmentTag::markPrinted);
+        tags.saveAll(ensured);
+    }
+
+    private boolean hasTag(List<GarmentTag> existing, OrderItem item, int sequence) {
+        return existing.stream().anyMatch(tag -> tag.getPieceSequence() == sequence
+                && (tag.getOrderItem() == item
+                || (tag.getOrderItem() != null && item.getId() != null
+                && item.getId().equals(tag.getOrderItem().getId()))));
+    }
+
+    private Object itemReference(OrderItem item, int itemPosition) {
+        return item.getId() == null ? itemPosition : item.getId();
     }
 }

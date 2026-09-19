@@ -26,6 +26,7 @@ public class AdminWebController {
     private final WebOrderService webOrders;
     private final PaymentService payments;
     private final DocumentService documents;
+    private final GarmentTagRepository garmentTags;
     private final InvoicePaymentImageService images;
     private final WhatsappMessageRepository messages;
     private final ZoneId zone;
@@ -35,12 +36,12 @@ public class AdminWebController {
     public AdminWebController(CustomerRepository customers, LaundryServiceRepository catalog,
             LaundryOrderRepository orders, CustomerWebService customerService, WebOrderService webOrders,
             PaymentService payments, DocumentService documents, InvoicePaymentImageService images,
-            WhatsappMessageRepository messages, @Value("${app.business-zone}") String zone,
+            WhatsappMessageRepository messages, GarmentTagRepository garmentTags, @Value("${app.business-zone}") String zone,
             @Value("${app.business.name}") String businessName, @Value("${app.payment.upi-id:}") String upiId) {
         this.customers = customers; this.catalog = catalog; this.orders = orders;
         this.customerService = customerService; this.webOrders = webOrders;
         this.payments = payments; this.documents = documents; this.images = images;
-        this.messages = messages; this.zone = ZoneId.of(zone); this.businessName = businessName;
+        this.messages = messages; this.garmentTags = garmentTags; this.zone = ZoneId.of(zone); this.businessName = businessName;
         this.upiConfigured = !upiId.isBlank();
     }
 
@@ -159,6 +160,9 @@ public class AdminWebController {
         var summary = payments.summary(number);
         model.addAttribute("order", summary.order());
         model.addAttribute("summary", summary);
+        var tags = garmentTags.findByOrder_IdOrderByOrderItem_IdAscPieceSequenceAsc(summary.order().getId());
+        model.addAttribute("tagCount", tags.size());
+        model.addAttribute("printedTagCount", tags.stream().filter(tag -> tag.getPrintCount() > 0).count());
         model.addAttribute("modes", PaymentMode.values());
         String state = summary.order().getInvoiceNumber() == null ? "No invoice" : messages
                 .findByDeduplicationKey("INVOICE_IMAGE:" + summary.order().getInvoiceNumber())

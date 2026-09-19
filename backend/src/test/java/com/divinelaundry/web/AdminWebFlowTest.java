@@ -31,6 +31,7 @@ class AdminWebFlowTest {
 
     @Test void loginAndCsrfAreEnforced() throws Exception {
         mvc.perform(get("/")).andExpect(status().is3xxRedirection());
+                mvc.perform(get("/api/documents/orders/SO-2026-000001")).andExpect(status().is3xxRedirection());
         mvc.perform(get("/login")).andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("_csrf")));
         mvc.perform(post("/customers").with(user("admin").roles("ADMIN"))).andExpect(status().isForbidden());
         var result = mvc.perform(post("/login").with(csrf()).param("username", "admin").param("password", "TestPassword123!"))
