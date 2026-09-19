@@ -48,7 +48,10 @@ public class Payment {
             Instant paidAt,
             String createdBy) {
         if (amount == null || amount.signum() <= 0) {
-            throw new IllegalArgumentException("Payment amount must be positive");
+            throw new IllegalArgumentException("Payment amount must be greater than zero");
+        }
+        if (amount.scale() > 2) {
+            throw new IllegalArgumentException("Payment amount cannot have more than two decimal places");
         }
         this.clientRequestId = clientRequestId;
         this.order = order;

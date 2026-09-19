@@ -130,8 +130,13 @@ public class LaundryOrder {
     }
 
     public void recordPayment(BigDecimal amountPaid) {
-        if (amountPaid == null || amountPaid.signum() <= 0) {
+        if (amountPaid == null || amountPaid.signum() < 0) {
+            throw new IllegalArgumentException("Recorded payment total cannot be negative");
+        }
+        if (amountPaid.signum() == 0) {
             this.paymentStatus = PaymentStatus.UNPAID;
+        } else if (amountPaid.compareTo(total) > 0) {
+            throw new IllegalArgumentException("Recorded payment total cannot exceed the order total");
         } else if (amountPaid.compareTo(total) < 0) {
             this.paymentStatus = PaymentStatus.PARTIAL;
         } else {

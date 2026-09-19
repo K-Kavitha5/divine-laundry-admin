@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.security.Principal;
 
 @RestController
 @RequestMapping("/api/payments")
@@ -24,13 +25,13 @@ public class PaymentController {
     @ResponseStatus(HttpStatus.CREATED)
     PaymentSummaryResponse record(
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
-            @Valid @RequestBody PaymentRequest request) {
+            @Valid @RequestBody PaymentRequest request, Principal principal) {
         if (idempotencyKey != null && !idempotencyKey.equals(request.clientRequestId())) {
             throw new IllegalArgumentException("Idempotency key does not match the request ID");
         }
         return PaymentSummaryResponse.from(paymentService.record(new PaymentService.RecordPaymentCommand(
                 request.clientRequestId(), request.orderNumber(), request.mode(), request.transactionReference(),
-                request.amount(), request.paidAt(), request.createdBy())));
+                request.amount(), request.paidAt(), principal.getName())));
     }
 
     @GetMapping("/order/{orderNumber}")
@@ -43,9 +44,9 @@ public class PaymentController {
             @NotBlank String orderNumber,
             @NotNull PaymentMode mode,
             String transactionReference,
-            @NotNull @DecimalMin("0.01") BigDecimal amount,
+            @NotNull @DecimalMin("0.01") @Digits(integer = 10, fraction = 2) BigDecimal amount,
             Instant paidAt,
-            @NotBlank String createdBy) {}
+            String createdBy) {}
 
     public record PaymentRow(
             String paymentNumber,

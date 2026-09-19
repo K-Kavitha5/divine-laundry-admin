@@ -36,8 +36,11 @@ public class PaymentService {
             }
             return summary(existing.getOrder());
         }
-        if (command.amount() == null || command.amount().signum() <= 0 || command.amount().scale() > 2) {
-            throw new IllegalArgumentException("Payment must be positive with at most two decimal places");
+        if (command.amount() == null || command.amount().signum() <= 0) {
+            throw new IllegalArgumentException("Payment amount must be greater than zero");
+        }
+        if (command.amount().scale() > 2) {
+            throw new IllegalArgumentException("Payment amount cannot have more than two decimal places");
         }
 
         LaundryOrder order = orders.findByOrderNumber(command.orderNumber())
@@ -46,10 +49,13 @@ public class PaymentService {
             throw new IllegalStateException("A cancelled order cannot receive payment");
         }
 
-        BigDecimal paidBefore = payments.sumByOrderId(order.getId());
-        BigDecimal balance = order.getTotal().subtract(paidBefore).max(BigDecimal.ZERO);
+        BigDecimal paidBefore = nonNegative(payments.sumByOrderId(order.getId()));
+        BigDecimal balance = outstanding(order.getTotal(), paidBefore);
+        if (balance.signum() == 0) {
+            throw new IllegalStateException("Order has no outstanding balance");
+        }
         if (command.amount().compareTo(balance) > 0) {
-            throw new IllegalArgumentException("Payment exceeds the remaining balance of " + balance);
+            throw new IllegalArgumentException("Payment amount cannot exceed outstanding balance of " + balance);
         }
 
         Payment payment = new Payment(
@@ -73,8 +79,16 @@ public class PaymentService {
     private PaymentSummary summary(LaundryOrder order) {
         List<Payment> rows = payments.findByOrderOrderNumberOrderByPaidAtDesc(order.getOrderNumber());
         BigDecimal paid = rows.stream().map(Payment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal balance = order.getTotal().subtract(paid).max(BigDecimal.ZERO);
+        BigDecimal balance = outstanding(order.getTotal(), paid);
         return new PaymentSummary(order, paid, balance, rows);
+    }
+
+    static BigDecimal outstanding(BigDecimal total, BigDecimal paid) {
+        return total.subtract(paid).max(BigDecimal.ZERO);
+    }
+
+    private static BigDecimal nonNegative(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value.max(BigDecimal.ZERO);
     }
 
     private static int currentYear() {
