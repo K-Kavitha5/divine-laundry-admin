@@ -5,6 +5,10 @@ document.querySelectorAll('.sidebar nav a').forEach(a => {
 document.querySelectorAll('[data-print]').forEach(button => button.addEventListener('click', () => window.print()));
 document.querySelectorAll('[data-lock-submit]').forEach(form => {
   form.addEventListener('submit', event => {
+    const message = form.dataset.confirm;
+    if (message && !window.confirm(message)) event.preventDefault();
+  });
+  form.addEventListener('submit', event => {
     if (form.dataset.submitting === 'true') { event.preventDefault(); return; }
     form.dataset.submitting = 'true';
     form.querySelectorAll('button[type="submit"]').forEach(button => { button.disabled = true; });

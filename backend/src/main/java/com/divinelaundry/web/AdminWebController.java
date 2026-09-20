@@ -13,6 +13,8 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import java.security.Principal;
 import java.time.*;
 import java.util.*;
@@ -29,6 +31,14 @@ public class AdminWebController {
     private final GarmentTagRepository garmentTags;
     private final InvoicePaymentImageService images;
     private final WhatsappMessageRepository messages;
+        private final PaymentRepository paymentRows;
+        private final OrderStatusHistoryRepository statusHistory;
+        private final OrderService orderService;
+        private static final List<OrderStatus> IN_PROCESS = List.of(OrderStatus.RECEIVED, OrderStatus.WASHING,
+            OrderStatus.IRONING, OrderStatus.CLEANED, OrderStatus.REWORK);
+        private static final List<OrderStatus> OPEN = List.of(OrderStatus.DRAFT, OrderStatus.RECEIVED, OrderStatus.WASHING,
+            OrderStatus.IRONING, OrderStatus.CLEANED, OrderStatus.READY, OrderStatus.REWORK);
+        private static final List<PaymentStatus> OUTSTANDING = List.of(PaymentStatus.UNPAID, PaymentStatus.PARTIAL);
     private final ZoneId zone;
     private final String businessName;
     private final boolean upiConfigured;
@@ -37,12 +47,14 @@ public class AdminWebController {
             LaundryOrderRepository orders, CustomerWebService customerService, WebOrderService webOrders,
             PaymentService payments, DocumentService documents, InvoicePaymentImageService images,
             WhatsappMessageRepository messages, GarmentTagRepository garmentTags, @Value("${app.business-zone}") String zone,
-            @Value("${app.business.name}") String businessName, @Value("${app.payment.upi-id:}") String upiId) {
+            @Value("${app.business.name}") String businessName, @Value("${app.payment.upi-id:}") String upiId,
+            PaymentRepository paymentRows, OrderStatusHistoryRepository statusHistory, OrderService orderService) {
         this.customers = customers; this.catalog = catalog; this.orders = orders;
         this.customerService = customerService; this.webOrders = webOrders;
         this.payments = payments; this.documents = documents; this.images = images;
         this.messages = messages; this.garmentTags = garmentTags; this.zone = ZoneId.of(zone); this.businessName = businessName;
-        this.upiConfigured = !upiId.isBlank();
+        this.upiConfigured = !upiId.isBlank(); this.paymentRows = paymentRows;
+        this.statusHistory = statusHistory; this.orderService = orderService;
     }
 
     @InitBinder
@@ -63,8 +75,49 @@ public class AdminWebController {
         model.addAttribute("customerCount", customers.count());
         model.addAttribute("orderCount", orders.count());
         model.addAttribute("recentOrders", orders.findTop50ByOrderByPlacedAtDesc());
+        Instant start = LocalDate.now(zone).atStartOfDay(zone).toInstant();
+        Instant end = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant();
+        model.addAttribute("dashboard", new DashboardMetrics(
+            orders.countSalesOrdersBetween(start, end, List.of(OrderStatus.DRAFT, OrderStatus.CANCELLED)),
+            orders.countByWorkStatusIn(IN_PROCESS), orders.countByWorkStatus(OrderStatus.READY),
+            orders.countByWorkStatus(OrderStatus.DELIVERED),
+            orders.sumUnpaidBilledAmount(OUTSTANDING, List.of(OrderStatus.CANCELLED))
+                .subtract(paymentRows.sumForOutstandingOrders(OUTSTANDING, List.of(OrderStatus.CANCELLED)))
+                .max(java.math.BigDecimal.ZERO),
+            paymentRows.sumBetween(start, end, OrderStatus.CANCELLED),
+            orders.countByPickupAtBetweenAndWorkStatusIn(start, end, OPEN),
+            orders.countByDeliveryAtBetweenAndWorkStatusIn(start, end, OPEN)));
         return "dashboard";
     }
+
+        @GetMapping("/orders")
+        String orderList(@RequestParam(defaultValue = "") String orderQuery,
+            @RequestParam(defaultValue = "") String customerQuery,
+            @RequestParam(defaultValue = "") String phoneQuery,
+            @RequestParam(required = false) OrderStatus status,
+            @RequestParam(required = false) PaymentStatus paymentStatus,
+            @RequestParam(required = false) LocalDate orderFrom,
+            @RequestParam(required = false) LocalDate orderTo,
+            @RequestParam(required = false) LocalDate pickupFrom,
+            @RequestParam(required = false) LocalDate pickupTo,
+            @RequestParam(required = false) LocalDate deliveryFrom,
+            @RequestParam(required = false) LocalDate deliveryTo,
+            @RequestParam(defaultValue = "0") int page, Model model) {
+        var result = orders.findOperations(orderQuery.trim(), customerQuery.trim(), phoneQuery.trim(), status,
+            paymentStatus, startOf(orderFrom), nextDay(orderTo), startOf(pickupFrom), nextDay(pickupTo),
+            startOf(deliveryFrom), nextDay(deliveryTo), PageRequest.of(Math.max(0, page), 25,
+                Sort.by(Sort.Direction.DESC, "placedAt")));
+        model.addAttribute("ordersPage", result);
+        model.addAttribute("orderRows", orderRows(result.getContent()));
+        model.addAttribute("orderQuery", orderQuery); model.addAttribute("customerQuery", customerQuery);
+        model.addAttribute("phoneQuery", phoneQuery); model.addAttribute("status", status);
+        model.addAttribute("paymentStatus", paymentStatus); model.addAttribute("orderFrom", orderFrom);
+        model.addAttribute("orderTo", orderTo); model.addAttribute("pickupFrom", pickupFrom);
+        model.addAttribute("pickupTo", pickupTo); model.addAttribute("deliveryFrom", deliveryFrom);
+        model.addAttribute("deliveryTo", deliveryTo); model.addAttribute("statuses", OrderStatus.values());
+        model.addAttribute("paymentStatuses", PaymentStatus.values());
+        return "orders";
+        }
 
     @GetMapping("/customers")
     String customers(@RequestParam(defaultValue = "") String q, Model model) {
@@ -163,12 +216,65 @@ public class AdminWebController {
         var tags = garmentTags.findByOrder_IdOrderByOrderItem_IdAscPieceSequenceAsc(summary.order().getId());
         model.addAttribute("tagCount", tags.size());
         model.addAttribute("printedTagCount", tags.stream().filter(tag -> tag.getPrintCount() > 0).count());
+        model.addAttribute("reprintCount", tags.stream().mapToInt(tag -> Math.max(0, tag.getPrintCount() - 1)).sum());
+        model.addAttribute("physicalTagCount", summary.order().getItems().stream()
+            .filter(item -> !item.isNoPrint()).mapToInt(OrderItem::getPieceCount).sum());
+        model.addAttribute("tags", tags);
+        model.addAttribute("statusHistory", statusHistory.findByOrder_OrderNumberOrderByChangedAtAsc(number));
+        model.addAttribute("nextStatuses", Arrays.stream(OrderStatus.values())
+            .filter(next -> OrderStatus.isValidTransition(summary.order().getWorkStatus(), next)).toList());
         model.addAttribute("modes", PaymentMode.values());
         String state = summary.order().getInvoiceNumber() == null ? "No invoice" : messages
                 .findByDeduplicationKey("INVOICE_IMAGE:" + summary.order().getInvoiceNumber())
                 .map(message -> message.getDeliveryStatus().name()).orElse("NOT_QUEUED");
         model.addAttribute("whatsappState", state);
     }
+
+    @PostMapping("/orders/{number}/status")
+    String changeStatus(@PathVariable String number, @RequestParam OrderStatus status,
+            Principal principal, RedirectAttributes redirect) {
+        try {
+            orderService.changeStatus(number, status, principal.getName());
+            redirect.addFlashAttribute("success", "Order status updated to " + status + ".");
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/orders/" + number;
+    }
+
+    private Instant startOf(LocalDate date) {
+        return date == null ? null : date.atStartOfDay(zone).toInstant();
+    }
+
+    private Instant nextDay(LocalDate date) {
+        return date == null ? null : date.plusDays(1).atStartOfDay(zone).toInstant();
+    }
+
+        private List<OrderRow> orderRows(List<LaundryOrder> pageOrders) {
+        if (pageOrders.isEmpty()) return List.of();
+        var ids = pageOrders.stream().map(LaundryOrder::getId).toList();
+        var tagsByOrder = garmentTags.findByOrder_IdInOrderByOrder_IdAscOrderItem_IdAscPieceSequenceAsc(ids)
+            .stream().collect(java.util.stream.Collectors.groupingBy(tag -> tag.getOrder().getId()));
+        var paidByOrder = paymentRows.findByOrder_IdInOrderByPaidAtDesc(ids).stream()
+            .collect(java.util.stream.Collectors.groupingBy(payment -> payment.getOrder().getId(),
+                java.util.stream.Collectors.reducing(java.math.BigDecimal.ZERO, Payment::getAmount,
+                    java.math.BigDecimal::add)));
+        return pageOrders.stream().map(order -> {
+            var tags = tagsByOrder.getOrDefault(order.getId(), List.of());
+            var paid = paidByOrder.getOrDefault(order.getId(), java.math.BigDecimal.ZERO);
+                return new OrderRow(order, paid, order.getTotal().subtract(paid).max(java.math.BigDecimal.ZERO),
+                    order.getItems().stream().filter(item -> !item.isNoPrint()).mapToInt(OrderItem::getPieceCount).sum(),
+                    tags.size(), tags.stream().filter(tag -> tag.getPrintCount() > 0).count(),
+                tags.stream().mapToInt(tag -> Math.max(0, tag.getPrintCount() - 1)).sum());
+        }).toList();
+    }
+
+    record OrderRow(LaundryOrder order, java.math.BigDecimal paid, java.math.BigDecimal balance,
+            int physicalTagCount, int tagCount, long printedTagCount, int reprintCount) {}
+
+    record DashboardMetrics(long todayOrders, long pendingOrders, long readyOrders, long deliveredOrders,
+            java.math.BigDecimal outstanding, java.math.BigDecimal todayCollections,
+            long pickupDueToday, long deliveryDueToday) {}
 
     @PostMapping("/orders/{number}/payments")
     String pay(@PathVariable String number, @Valid @ModelAttribute PaymentForm paymentForm,

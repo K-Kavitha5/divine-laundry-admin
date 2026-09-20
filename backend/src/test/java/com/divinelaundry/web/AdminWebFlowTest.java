@@ -81,6 +81,29 @@ class AdminWebFlowTest {
         assertThat(orders.count()).isEqualTo(before + 2);
     }
 
+    @Test void operationsListAndStatusActionsUseServerRulesAndCsrf() throws Exception {
+        String phone = "9" + String.format("%09d", Math.floorMod(UUID.randomUUID().getLeastSignificantBits(), 1000000000L));
+        mvc.perform(post("/customers").with(user("admin").roles("ADMIN")).with(csrf())
+                .param("name", "Operations Customer").param("phone", phone).param("area", "Trichy")
+                .param("addressLine", "Test street")).andExpect(status().is3xxRedirection());
+        var customer = customers.findByPhone(phone).orElseThrow();
+        var service = catalog.findByActiveTrueOrderByCategoryAscNameAsc().stream()
+                .filter(item -> item.getCode().equals("SHIRT_IRON")).findFirst().orElseThrow();
+        String redirect = createOrder(customer.getId(), service.getId(), UUID.randomUUID().toString());
+        String number = redirect.substring("/orders/".length());
+
+        mvc.perform(get("/orders").param("orderQuery", number).with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString(number)));
+        mvc.perform(post("/orders/{number}/status", number).with(user("admin").roles("ADMIN"))
+                .with(csrf()).param("status", "WASHING")).andExpect(redirectedUrl(redirect));
+        assertThat(orders.findByOrderNumber(number).orElseThrow().getWorkStatus().name()).isEqualTo("WASHING");
+        mvc.perform(post("/orders/{number}/status", number).with(user("admin").roles("ADMIN"))
+                .with(csrf()).param("status", "DELIVERED")).andExpect(redirectedUrl(redirect));
+        assertThat(orders.findByOrderNumber(number).orElseThrow().getWorkStatus().name()).isEqualTo("WASHING");
+        mvc.perform(post("/orders/{number}/status", number).with(user("admin").roles("ADMIN"))
+                .param("status", "CLEANED")).andExpect(status().isForbidden());
+    }
+
     @Test void restOrderUsesAuthenticatedActorAndCustomerPhoneNormalization() throws Exception {
         String digits = "9" + String.format("%09d", Math.floorMod(UUID.randomUUID().getLeastSignificantBits(), 1000000000L));
         mvc.perform(post("/api/customers").with(user("admin").roles("ADMIN")).with(csrf())

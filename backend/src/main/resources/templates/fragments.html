@@ -7,7 +7,7 @@
 <aside th:fragment="sidebar" class="sidebar">
 <a class="brand" th:href="@{/}"><span class="logo">D</span><span>Divine<small>Laundry Admin</small></span></a>
 <p class="eyebrow">WORKSPACE</p>
-<nav aria-label="Main navigation"><a th:href="@{/}">Dashboard &amp; orders</a><a th:href="@{/orders/new}">＋ New order</a><a th:href="@{/customers}">Customers</a><a th:href="@{/services}">Services &amp; prices</a></nav>
+<nav aria-label="Main navigation"><a th:href="@{/}">Dashboard</a><a th:href="@{/orders}">Orders</a><a th:href="@{/orders/new}">＋ New order</a><a th:href="@{/customers}">Customers</a><a th:href="@{/services}">Services &amp; prices</a></nav>
 <div class="sidebar-bottom"><span class="badge">Website milestone 1</span><p>Private admin workspace</p>
 <form th:action="@{/logout}" method="post"><button class="secondary" type="submit">Sign out</button></form></div></aside>
 <header th:fragment="topbar(title)" class="topbar"><span th:text="${businessName}">Divine Laundry</span><b th:text="${title}">Dashboard</b></header>
