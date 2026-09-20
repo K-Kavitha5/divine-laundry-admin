@@ -30,6 +30,7 @@ public class AdminWebController {
     private final DocumentService documents;
     private final GarmentTagRepository garmentTags;
     private final InvoicePaymentImageService images;
+    private final PdfInvoiceService pdfInvoices;
     private final WhatsappMessageRepository messages;
         private final PaymentRepository paymentRows;
         private final OrderStatusHistoryRepository statusHistory;
@@ -48,10 +49,12 @@ public class AdminWebController {
             PaymentService payments, DocumentService documents, InvoicePaymentImageService images,
             WhatsappMessageRepository messages, GarmentTagRepository garmentTags, @Value("${app.business-zone}") String zone,
             @Value("${app.business.name}") String businessName, @Value("${app.payment.upi-id:}") String upiId,
-            PaymentRepository paymentRows, OrderStatusHistoryRepository statusHistory, OrderService orderService) {
+            PaymentRepository paymentRows, OrderStatusHistoryRepository statusHistory, OrderService orderService,
+            PdfInvoiceService pdfInvoices) {
         this.customers = customers; this.catalog = catalog; this.orders = orders;
         this.customerService = customerService; this.webOrders = webOrders;
         this.payments = payments; this.documents = documents; this.images = images;
+        this.pdfInvoices = pdfInvoices;
         this.messages = messages; this.garmentTags = garmentTags; this.zone = ZoneId.of(zone); this.businessName = businessName;
         this.upiConfigured = !upiId.isBlank(); this.paymentRows = paymentRows;
         this.statusHistory = statusHistory; this.orderService = orderService;
@@ -308,6 +311,16 @@ public class AdminWebController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
                         .filename(bundle.order().getInvoiceNumber() + ".png").build().toString())
                 .body(images.render(bundle));
+    }
+
+    @GetMapping(value = "/orders/{number}/invoice.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    @ResponseBody
+    ResponseEntity<byte[]> pdf(@PathVariable String number) {
+        var bundle = documents.document(number);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(bundle.order().getInvoiceNumber() + ".pdf").build().toString())
+                .body(pdfInvoices.render(bundle));
     }
 
     @GetMapping("/services")

@@ -15,6 +15,7 @@ class DocumentServiceTest {
         OrderService orders = mock(OrderService.class);
         PaymentService payments = mock(PaymentService.class);
         TagService tags = mock(TagService.class);
+        GarmentTagRepository garmentTags = mock(GarmentTagRepository.class);
         LaundryOrder order = new LaundryOrder("document-request", new Customer("Test Customer", "9876543210", null, "Trichy"), null, null, "admin");
         order.assignOrderNumber("SO-2026-000001");
         order.finalizeInvoice("INV-2026-000001");
@@ -24,7 +25,8 @@ class DocumentServiceTest {
         when(orders.get(order.getOrderNumber())).thenReturn(order);
         when(tags.ensureTags(order)).thenReturn(List.of(tag));
         when(payments.summary(order.getOrderNumber())).thenReturn(summary);
-        DocumentService service = new DocumentService(orders, payments, tags,
+        when(garmentTags.findByOrder_IdOrderByOrderItem_IdAscPieceSequenceAsc(order.getId())).thenReturn(List.of(tag));
+        DocumentService service = new DocumentService(orders, payments, tags, garmentTags,
                 "Divine Laundry", "0431-000000", "Trichy", "");
 
         DocumentService.DocumentBundle first = service.document(order.getOrderNumber());
@@ -32,6 +34,7 @@ class DocumentServiceTest {
 
         assertThat(first.tags()).containsExactly(tag);
         assertThat(second.tags()).containsExactly(tag);
-        verify(tags, times(2)).ensureTags(order);
+        verify(garmentTags, times(2)).findByOrder_IdOrderByOrderItem_IdAscPieceSequenceAsc(order.getId());
+        verify(tags, never()).ensureTags(order);
     }
 }

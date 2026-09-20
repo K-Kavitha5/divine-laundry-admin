@@ -2,6 +2,7 @@ package com.divinelaundry.service;
 
 import com.divinelaundry.domain.GarmentTag;
 import com.divinelaundry.domain.LaundryOrder;
+import com.divinelaundry.repository.GarmentTagRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,12 +13,14 @@ public class DocumentService {
     private final OrderService orderService;
     private final PaymentService paymentService;
     private final TagService tagService;
+    private final GarmentTagRepository garmentTags;
     private final BusinessDetails business;
 
     public DocumentService(
             OrderService orderService,
             PaymentService paymentService,
             TagService tagService,
+            GarmentTagRepository garmentTags,
             @Value("${app.business.name}") String name,
             @Value("${app.business.phone}") String phone,
             @Value("${app.business.address}") String address,
@@ -25,16 +28,17 @@ public class DocumentService {
         this.orderService = orderService;
         this.paymentService = paymentService;
         this.tagService = tagService;
+        this.garmentTags = garmentTags;
         this.business = new BusinessDetails(name, phone, address, gstNumber);
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public DocumentBundle document(String orderNumber) {
         LaundryOrder order = orderService.get(orderNumber);
         if (order.getInvoiceNumber() == null) {
             throw new IllegalStateException("Create the invoice before printing or sharing it");
         }
-        List<GarmentTag> tags = tagService.ensureTags(order);
+        List<GarmentTag> tags = garmentTags.findByOrder_IdOrderByOrderItem_IdAscPieceSequenceAsc(order.getId());
         PaymentService.PaymentSummary payments = paymentService.summary(orderNumber);
         return new DocumentBundle(business, order, payments, tags);
     }

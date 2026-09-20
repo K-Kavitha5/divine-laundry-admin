@@ -32,6 +32,7 @@ class AdminWebFlowTest {
     @Test void loginAndCsrfAreEnforced() throws Exception {
         mvc.perform(get("/")).andExpect(status().is3xxRedirection());
                 mvc.perform(get("/api/documents/orders/SO-2026-000001")).andExpect(status().is3xxRedirection());
+                        mvc.perform(get("/orders/SO-2026-000001/invoice.pdf")).andExpect(status().is3xxRedirection());
         mvc.perform(get("/login")).andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("_csrf")));
         mvc.perform(post("/customers").with(user("admin").roles("ADMIN"))).andExpect(status().isForbidden());
         var result = mvc.perform(post("/login").with(csrf()).param("username", "admin").param("password", "TestPassword123!"))
@@ -69,14 +70,40 @@ class AdminWebFlowTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString(order.getInvoiceNumber())));
         mvc.perform(get(redirect + "/invoice.png").with(user("admin").roles("ADMIN"))).andExpect(status().isOk())
                 .andExpect(content().contentType("image/png"));
+        var firstPdf = mvc.perform(get(redirect + "/invoice.pdf").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk()).andExpect(content().contentType("application/pdf"))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString(order.getInvoiceNumber() + ".pdf")))
+                .andReturn().getResponse().getContentAsByteArray();
+        var secondPdf = mvc.perform(get(redirect + "/invoice.pdf").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertThat(firstPdf).startsWith((byte) '%', (byte) 'P', (byte) 'D', (byte) 'F');
+        assertThat(secondPdf).startsWith((byte) '%', (byte) 'P', (byte) 'D', (byte) 'F');
+        assertThat(firstPdf.length).isEqualTo(secondPdf.length);
         mvc.perform(post(redirect + "/payments").with(user("admin").roles("ADMIN")).with(csrf())
                 .param("requestId", UUID.randomUUID().toString()).param("amount", "29.00").param("mode", "CASH"))
                 .andExpect(model().attributeHasErrors("paymentForm"));
+        mvc.perform(post(redirect + "/payments").with(user("admin").roles("ADMIN")).with(csrf())
+                .param("requestId", UUID.randomUUID().toString()).param("amount", "10.00").param("mode", "CASH"))
+                .andExpect(redirectedUrl(redirect));
+        mvc.perform(get(redirect + "/invoice").with(user("admin").roles("ADMIN"))).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("PARTIAL")));
         String paymentId = UUID.randomUUID().toString();
         for (int i = 0; i < 2; i++) mvc.perform(post(redirect + "/payments").with(user("admin").roles("ADMIN")).with(csrf())
-                .param("requestId", paymentId).param("amount", "28.00").param("mode", "CASH"))
+                .param("requestId", paymentId).param("amount", "18.00").param("mode", "CASH"))
                 .andExpect(redirectedUrl(redirect));
         assertThat(orders.findByOrderNumber(number).orElseThrow().getPaymentStatus().name()).isEqualTo("PAID");
+        mvc.perform(post(redirect + "/status").with(user("admin").roles("ADMIN")).with(csrf()).param("status", "WASHING"))
+                .andExpect(redirectedUrl(redirect));
+        mvc.perform(post(redirect + "/status").with(user("admin").roles("ADMIN")).with(csrf()).param("status", "IRONING"))
+                .andExpect(redirectedUrl(redirect));
+        mvc.perform(post(redirect + "/status").with(user("admin").roles("ADMIN")).with(csrf()).param("status", "CLEANED"))
+                .andExpect(redirectedUrl(redirect));
+        mvc.perform(post(redirect + "/status").with(user("admin").roles("ADMIN")).with(csrf()).param("status", "READY"))
+                .andExpect(redirectedUrl(redirect));
+        mvc.perform(post(redirect + "/status").with(user("admin").roles("ADMIN")).with(csrf()).param("status", "DELIVERED"))
+                .andExpect(redirectedUrl(redirect));
+        mvc.perform(get(redirect + "/invoice").with(user("admin").roles("ADMIN"))).andExpect(status().isOk());
+        mvc.perform(get(redirect + "/invoice.pdf").with(user("admin").roles("ADMIN"))).andExpect(status().isOk());
         assertThat(createOrder(customer.getId(), service.getId(), UUID.randomUUID().toString())).isNotEqualTo(redirect);
         assertThat(orders.count()).isEqualTo(before + 2);
     }

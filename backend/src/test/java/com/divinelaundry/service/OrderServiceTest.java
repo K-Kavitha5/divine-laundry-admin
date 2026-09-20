@@ -15,6 +15,8 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +24,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class OrderServiceTest {
+    @Test
+    void newlyFinalisedInvoiceUsesTheBusinessYear() {
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        OrderService service = new OrderService(orders, mock(CustomerRepository.class),
+                mock(LaundryServiceRepository.class), mock(OrderStatusHistoryRepository.class),
+                mock(ApplicationEventPublisher.class), "Asia/Kolkata",
+                Clock.fixed(Instant.parse("2026-12-31T18:30:00Z"), ZoneId.of("UTC")));
+        LaundryOrder order = mock(LaundryOrder.class);
+        when(order.getInvoiceNumber()).thenReturn(null);
+        when(order.getId()).thenReturn(42L);
+        when(order.getOrderNumber()).thenReturn("SO-2027-000042");
+        when(orders.findByOrderNumber("SO-2027-000042")).thenReturn(java.util.Optional.of(order));
+
+        service.finalizeInvoice("SO-2027-000042");
+
+        verify(order).finalizeInvoice("INV-2027-000042");
+    }
     @Test
     void repeatedClientRequestReturnsTheOriginalOrderWithoutCreatingAnotherBill() {
         LaundryOrderRepository orders = mock(LaundryOrderRepository.class);

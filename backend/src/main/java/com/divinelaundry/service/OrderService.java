@@ -6,11 +6,14 @@ import com.divinelaundry.repository.LaundryOrderRepository;
 import com.divinelaundry.repository.LaundryServiceRepository;
 import com.divinelaundry.repository.OrderStatusHistoryRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.Clock;
 import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Objects;
 
@@ -25,6 +28,36 @@ public class OrderService {
     private final LaundryServiceRepository services;
     private final OrderStatusHistoryRepository statusHistory;
     private final ApplicationEventPublisher events;
+    private final ZoneId businessZone;
+    private final Clock clock;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderService(
+            LaundryOrderRepository orders,
+            CustomerRepository customers,
+            LaundryServiceRepository services,
+            OrderStatusHistoryRepository statusHistory,
+            ApplicationEventPublisher events,
+            @Value("${app.business-zone:Asia/Kolkata}") String businessZone) {
+        this(orders, customers, services, statusHistory, events, businessZone, Clock.systemUTC());
+    }
+
+    public OrderService(
+            LaundryOrderRepository orders,
+            CustomerRepository customers,
+            LaundryServiceRepository services,
+            OrderStatusHistoryRepository statusHistory,
+            ApplicationEventPublisher events,
+            String businessZone,
+            Clock clock) {
+        this.orders = orders;
+        this.customers = customers;
+        this.services = services;
+        this.statusHistory = statusHistory;
+        this.events = events;
+        this.businessZone = ZoneId.of(businessZone);
+        this.clock = clock;
+    }
 
     public OrderService(
             LaundryOrderRepository orders,
@@ -32,11 +65,7 @@ public class OrderService {
             LaundryServiceRepository services,
             OrderStatusHistoryRepository statusHistory,
             ApplicationEventPublisher events) {
-        this.orders = orders;
-        this.customers = customers;
-        this.services = services;
-        this.statusHistory = statusHistory;
-        this.events = events;
+        this(orders, customers, services, statusHistory, events, "Asia/Kolkata", Clock.systemUTC());
     }
 
     @Transactional
@@ -190,8 +219,8 @@ public class OrderService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
-    private static int currentYear() {
-        return Instant.now().atZone(ZoneOffset.UTC).getYear();
+    private int currentYear() {
+        return clock.instant().atZone(businessZone).getYear();
     }
 
     public record CreateOrderCommand(

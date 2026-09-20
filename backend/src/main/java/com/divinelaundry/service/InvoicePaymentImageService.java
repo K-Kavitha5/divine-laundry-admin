@@ -55,7 +55,6 @@ public class InvoicePaymentImageService {
     public byte[] render(DocumentService.DocumentBundle bundle) {
         List<OrderItem> items = bundle.order().getItems();
         int displayedRows = items.size();
-        if (displayedRows > 50) throw new IllegalArgumentException("Use the printable invoice for orders above 50 lines");
         int height = 1130 + displayedRows * 65;
         BufferedImage image = new BufferedImage(WIDTH, height, BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = image.createGraphics();
