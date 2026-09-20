@@ -26,6 +26,7 @@ class AdminWebFlowTest {
     @Autowired CustomerRepository customers;
     @Autowired LaundryOrderRepository orders;
     @Autowired LaundryServiceRepository catalog;
+        @Autowired PaymentRepository payments;
     MockMvc mvc;
     @BeforeEach void setup() { mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build(); }
 
@@ -129,6 +130,41 @@ class AdminWebFlowTest {
         assertThat(orders.findByOrderNumber(number).orElseThrow().getWorkStatus().name()).isEqualTo("WASHING");
         mvc.perform(post("/orders/{number}/status", number).with(user("admin").roles("ADMIN"))
                 .param("status", "CLEANED")).andExpect(status().isForbidden());
+    }
+
+    @Test void paymentReceiptRoutesAreAdminOnlyOrderScopedAndReadOnly() throws Exception {
+        String phone = "9" + String.format("%09d", Math.floorMod(UUID.randomUUID().getLeastSignificantBits(), 1000000000L));
+        mvc.perform(post("/customers").with(user("admin").roles("ADMIN")).with(csrf())
+                .param("name", "Receipt Customer").param("phone", phone).param("area", "Trichy")
+                .param("addressLine", "Receipt street")).andExpect(status().is3xxRedirection());
+        var customer = customers.findByPhone(phone).orElseThrow();
+        var service = catalog.findByActiveTrueOrderByCategoryAscNameAsc().stream()
+                .filter(item -> item.getCode().equals("SHIRT_IRON")).findFirst().orElseThrow();
+        String orderUrl = createOrder(customer.getId(), service.getId(), UUID.randomUUID().toString());
+        String orderNumber = orderUrl.substring("/orders/".length());
+        String requestId = UUID.randomUUID().toString();
+        mvc.perform(post(orderUrl + "/payments").with(user("admin").roles("ADMIN")).with(csrf())
+                .param("requestId", requestId).param("amount", "10.00").param("mode", "CASH")
+                .param("reference", "RECEIPT-REF")).andExpect(redirectedUrl(orderUrl));
+        var payment = payments.findByClientRequestId(requestId).orElseThrow();
+        long paymentCount = payments.count();
+        String receiptUrl = "/orders/" + orderNumber + "/payments/" + payment.getPaymentNumber() + "/receipt";
+        mvc.perform(get(receiptUrl)).andExpect(status().is3xxRedirection());
+        mvc.perform(get(receiptUrl).with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
+        mvc.perform(get(receiptUrl).with(user("admin").roles("ADMIN"))).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(payment.getPaymentNumber())))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("PARTIAL")));
+        var firstReceiptPdf = mvc.perform(get(receiptUrl + ".pdf").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk()).andExpect(content().contentType("application/pdf"))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString(payment.getPaymentNumber())))
+                .andReturn().getResponse().getContentAsByteArray();
+        var secondReceiptPdf = mvc.perform(get(receiptUrl + ".pdf").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertThat(firstReceiptPdf).startsWith((byte) '%', (byte) 'P', (byte) 'D', (byte) 'F');
+        assertThat(secondReceiptPdf).startsWith((byte) '%', (byte) 'P', (byte) 'D', (byte) 'F');
+        assertThat(payments.count()).isEqualTo(paymentCount);
+        mvc.perform(get("/orders/OTHER-ORDER/payments/" + payment.getPaymentNumber() + "/receipt")
+                .with(user("admin").roles("ADMIN"))).andExpect(status().isNotFound());
     }
 
     @Test void restOrderUsesAuthenticatedActorAndCustomerPhoneNormalization() throws Exception {

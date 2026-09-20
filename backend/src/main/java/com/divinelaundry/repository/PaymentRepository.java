@@ -17,6 +17,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @EntityGraph(attributePaths = {"order", "order.customer"})
     Optional<Payment> findByClientRequestId(String clientRequestId);
 
+        @EntityGraph(attributePaths = {"order", "order.customer"})
+        Optional<Payment> findByPaymentNumber(String paymentNumber);
+
     @EntityGraph(attributePaths = {"order"})
     List<Payment> findByOrderOrderNumberOrderByPaidAtDesc(String orderNumber);
 

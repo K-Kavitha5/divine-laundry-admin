@@ -31,6 +31,8 @@ public class AdminWebController {
     private final GarmentTagRepository garmentTags;
     private final InvoicePaymentImageService images;
     private final PdfInvoiceService pdfInvoices;
+    private final PaymentReceiptService paymentReceipts;
+    private final PdfReceiptService pdfReceipts;
     private final WhatsappMessageRepository messages;
         private final PaymentRepository paymentRows;
         private final OrderStatusHistoryRepository statusHistory;
@@ -50,11 +52,12 @@ public class AdminWebController {
             WhatsappMessageRepository messages, GarmentTagRepository garmentTags, @Value("${app.business-zone}") String zone,
             @Value("${app.business.name}") String businessName, @Value("${app.payment.upi-id:}") String upiId,
             PaymentRepository paymentRows, OrderStatusHistoryRepository statusHistory, OrderService orderService,
-            PdfInvoiceService pdfInvoices) {
+            PdfInvoiceService pdfInvoices, PaymentReceiptService paymentReceipts, PdfReceiptService pdfReceipts) {
         this.customers = customers; this.catalog = catalog; this.orders = orders;
         this.customerService = customerService; this.webOrders = webOrders;
         this.payments = payments; this.documents = documents; this.images = images;
         this.pdfInvoices = pdfInvoices;
+        this.paymentReceipts = paymentReceipts; this.pdfReceipts = pdfReceipts;
         this.messages = messages; this.garmentTags = garmentTags; this.zone = ZoneId.of(zone); this.businessName = businessName;
         this.upiConfigured = !upiId.isBlank(); this.paymentRows = paymentRows;
         this.statusHistory = statusHistory; this.orderService = orderService;
@@ -322,6 +325,23 @@ public class AdminWebController {
                         .filename(bundle.order().getInvoiceNumber() + ".pdf").build().toString())
                 .body(pdfInvoices.render(bundle));
     }
+
+            @GetMapping("/orders/{number}/payments/{paymentNumber}/receipt")
+            String paymentReceipt(@PathVariable String number, @PathVariable String paymentNumber, Model model) {
+            model.addAttribute("receipt", paymentReceipts.document(number, paymentNumber));
+            return "payment-receipt";
+            }
+
+            @GetMapping(value = "/orders/{number}/payments/{paymentNumber}/receipt.pdf",
+                produces = MediaType.APPLICATION_PDF_VALUE)
+            @ResponseBody
+            ResponseEntity<byte[]> paymentReceiptPdf(@PathVariable String number, @PathVariable String paymentNumber) {
+            var receipt = paymentReceipts.document(number, paymentNumber);
+            return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                    .filename(receipt.receiptNumber() + ".pdf").build().toString())
+                .body(pdfReceipts.render(receipt));
+            }
 
     @GetMapping("/services")
     String services(Model model) { model.addAttribute("catalog", catalog.findByActiveTrueOrderByCategoryAscNameAsc()); return "services"; }
