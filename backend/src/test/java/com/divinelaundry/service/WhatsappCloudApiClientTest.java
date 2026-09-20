@@ -108,6 +108,24 @@ class WhatsappCloudApiClientTest {
     }
 
     @Test
+    void rejectsMissingBlankAndMalformedStructuredProviderResponsesSafely() throws Exception {
+        for (String body : new String[]{"{}", "{\"id\":\"\"}", "not-json"}) {
+            HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+            server.createContext("/v-test/123/media", exchange -> respond(exchange, 200, body));
+            server.start();
+            try {
+                assertThatThrownBy(() -> client(server, Duration.ofSeconds(1))
+                        .sendInvoiceAndPaymentImage("9876543210", new byte[]{1}, "INV-1.png", VALUES))
+                        .isInstanceOf(WhatsappCloudApiClient.WhatsappProviderException.class)
+                        .hasMessage("WhatsApp media upload did not return a message ID")
+                        .hasMessageNotContaining(body);
+            } finally {
+                server.stop(0);
+            }
+        }
+    }
+
+    @Test
     void uploadsPngThenSendsApprovedImageTemplate() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         AtomicReference<String> mediaRequest = new AtomicReference<>();

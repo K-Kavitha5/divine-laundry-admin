@@ -44,7 +44,7 @@ public class WhatsappMessageClaimService {
         return messages.findByDeduplicationKey(deduplicationKey);
     }
 
-    private static Duration parsePendingTimeout(String value) {
+    static Duration parsePendingTimeout(String value) {
         try {
             Duration parsed = Duration.parse(value == null ? "" : value.trim());
             if (parsed.isZero() || parsed.isNegative()) throw new IllegalArgumentException();

@@ -1,6 +1,9 @@
 package com.divinelaundry.service;
 
 import com.divinelaundry.config.WhatsappProviderProperties;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -16,28 +19,32 @@ import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Component
 public class WhatsappCloudApiClient {
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(35);
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
-    private static final Pattern RESPONSE_ID = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
-
     private final WhatsappProviderProperties properties;
     private final HttpClient http;
     private final Duration requestTimeout;
+    private final ObjectMapper json;
 
     @Autowired
     public WhatsappCloudApiClient(WhatsappProviderProperties properties) {
-        this(properties, HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build(), REQUEST_TIMEOUT);
+        this(properties, HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build(), REQUEST_TIMEOUT,
+                new ObjectMapper());
     }
 
     WhatsappCloudApiClient(WhatsappProviderProperties properties, HttpClient http, Duration requestTimeout) {
+        this(properties, http, requestTimeout, new ObjectMapper());
+    }
+
+    WhatsappCloudApiClient(WhatsappProviderProperties properties, HttpClient http,
+            Duration requestTimeout, ObjectMapper json) {
         this.properties = properties;
         this.http = http;
         this.requestTimeout = requestTimeout;
+        this.json = json;
     }
 
     public boolean isConfigured() {
@@ -97,7 +104,7 @@ public class WhatsappCloudApiClient {
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
-        return responseId(execute(request, "WhatsApp media upload"), "WhatsApp media upload");
+        return responseId(execute(request, "WhatsApp media upload"), "WhatsApp media upload", false);
     }
 
     private String sendUtilityTemplate(String phone, String mediaId, WhatsAppMediaType mediaType,
@@ -142,7 +149,7 @@ public class WhatsappCloudApiClient {
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(payload))
                 .build();
-        return responseId(execute(request, "WhatsApp template send"), "WhatsApp template send");
+        return responseId(execute(request, "WhatsApp template send"), "WhatsApp template send", true);
     }
 
     private HttpRequest.Builder request(String endpoint) {
@@ -207,13 +214,20 @@ public class WhatsappCloudApiClient {
         output.write("\r\n".getBytes(StandardCharsets.UTF_8));
     }
 
-    private static String responseId(String body, String operation) {
-        Matcher matcher = RESPONSE_ID.matcher(body == null ? "" : body);
-        if (!matcher.find() || matcher.group(1).isBlank()) {
+    private String responseId(String body, String operation, boolean messageResponse) {
+        try {
+            JsonNode root = json.readTree(body == null ? "" : body);
+            JsonNode id = messageResponse
+                    ? root.path("messages").path(0).path("id")
+                    : root.path("id");
+            if (!id.isTextual() || id.textValue().isBlank()) {
+                throw new JsonProcessingException("Missing provider ID") {};
+            }
+            return id.textValue();
+        } catch (JsonProcessingException | RuntimeException error) {
             throw new WhatsappProviderException(WhatsappFailureClassification.MALFORMED_PROVIDER_RESPONSE,
                     operation + " did not return a message ID");
         }
-        return matcher.group(1);
     }
 
     private static WhatsappFailureClassification classificationFor(int statusCode) {

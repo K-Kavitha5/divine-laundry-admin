@@ -1,15 +1,22 @@
-# Automatic WhatsApp invoice and UPI QR setup
+# WhatsApp Cloud API setup
 
-The backend now creates one PNG containing the invoice, item lines, total, paid amount, balance and a dynamic UPI QR. It uploads that PNG to the official WhatsApp Cloud API and sends it with an approved utility template.
+The backend supports three official WhatsApp Cloud API delivery flows:
+
+- Invoice image delivery with invoice details, amounts, balance and optional UPI QR.
+- Invoice PDF delivery as a document message.
+- Payment receipt PDF delivery as a document message.
+
+Each flow uploads media first, then sends the returned media ID in an approved template message.
 
 ## Automatic triggers
 
-- Finalising an invoice in the backend sends the initial image with a QR for the full balance, whether the action comes from the website or a future mobile app.
-- Recording a partial payment sends a new image with the updated paid amount, balance and a QR for only the remaining balance.
-- Recording the final payment sends a new image marked **PAID IN FULL** without requesting another payment.
-- Invoice and payment-number deduplication prevents the same successful message from being sent twice during retries.
+- Finalising an invoice sends the invoice image automatically after the database transaction commits.
+- Invoice PDF delivery is available through the authenticated admin workflow.
+- Recording a payment sends a payment receipt PDF through the payment-number deduplicated flow.
+- Invoice and payment-number deduplication prevents duplicate successful sends.
+- A `FAILED` message can be retried manually by an administrator. There is no automatic retry worker or scheduler.
 
-When provider configuration is incomplete, the message remains `WAITING_FOR_PROVIDER`. API errors are stored as `FAILED` with the provider error so an admin can retry safely.
+When provider configuration is incomplete or disabled, the message remains `WAITING_FOR_PROVIDER`. Provider failures are stored as `FAILED` with a safe classification so an administrator can retry manually.
 
 ## Meta account requirements
 
@@ -18,18 +25,26 @@ When provider configuration is incomplete, the message remains `WAITING_FOR_PROV
 3. Obtain the WhatsApp phone-number ID and a production system-user access token.
 4. Select a currently supported Graph API version from the Meta dashboard/documentation.
 5. Obtain customer consent/opt-in to receive transactional WhatsApp messages.
-6. Create and obtain approval for the utility template below.
+6. Create and obtain approval for the image and document utility templates used by this application.
 
 Never paste the access token into chat, frontend JavaScript or Git. Store it only as a server environment variable.
 
-## Required utility template
+## Required templates
 
-Suggested template name: `laundry_invoice_payment`
+Configure these independently:
+
+- `WHATSAPP_TEMPLATE_NAME` and `WHATSAPP_TEMPLATE_LANGUAGE` for invoice images.
+- `WHATSAPP_DOCUMENT_TEMPLATE_NAME` and `WHATSAPP_DOCUMENT_TEMPLATE_LANGUAGE` for invoice PDFs and payment receipt PDFs.
+
+Both templates must be approved by Meta before production use.
+
+### Invoice image template
 
 - Category: **Utility**
 - Header: **Image**
 - Language: **English** (`en`) or the exact language code approved in Meta
-- Body:
+- The body must contain six text parameters in this order: customer name, invoice or receipt number, order number, total amount, paid amount, balance amount.
+- Suggested body:
 
 ```text
 Hello {{1}}, your Divine Laundry invoice {{2}} for order {{3}} is ready.
@@ -39,7 +54,14 @@ Balance: ₹{{6}}
 The invoice and payment details are shown in the attached image.
 ```
 
-Use realistic sample values when submitting the template for approval. The configured template name, language and component order must exactly match the approved Meta template.
+### Invoice and receipt document template
+
+- Category: **Utility**
+- Header: **Document**
+- Language: the exact language code approved in Meta
+- The body must contain the same six text parameters and order shown above.
+
+The configured names, languages, header types, parameter count and parameter order must exactly match the approved Meta templates. The application does not verify template approval against Meta.
 
 ## Server environment
 
@@ -55,10 +77,14 @@ WHATSAPP_PHONE_NUMBER_ID=meta-phone-number-id
 WHATSAPP_ACCESS_TOKEN=production-system-user-token
 WHATSAPP_TEMPLATE_NAME=laundry_invoice_payment
 WHATSAPP_TEMPLATE_LANGUAGE=en
+WHATSAPP_DOCUMENT_TEMPLATE_NAME=approved-document-template
+WHATSAPP_DOCUMENT_TEMPLATE_LANGUAGE=en
 WHATSAPP_PENDING_TIMEOUT=PT15M
 ```
 
-Keep `WHATSAPP_ENABLED=false` until the template, phone number, access token and UPI ID have all been verified.
+Keep `WHATSAPP_ENABLED=false` until the phone number, access token, image template, document template, customer opt-in, and UPI configuration have all been verified.
+
+The access token must be stored only in the backend environment or a secret manager. Never place it in source control, frontend code, logs, templates, or screenshots.
 
 ## Payment safety and testing
 
@@ -70,16 +96,22 @@ Keep `WHATSAPP_ENABLED=false` until the template, phone number, access token and
 
 ## Production verification
 
-## Delivery claim limitation
+Use a Meta-approved test recipient and verify both media types:
 
 WhatsApp delivery uses a database-backed claim with a 15-minute stale-`PENDING` recovery window. If the provider accepts a message and the application crashes before saving `SENT`, a later manual retry may send a duplicate after that window. This phase does not implement an outbox or provider reconciliation workflow, so this crash window remains an accepted limitation.
 
-1. Finalise a test invoice and confirm the API status changes to `SENT`.
-2. Confirm the customer receives the PNG directly, not a hosted link.
-3. Scan the QR and verify payee, amount and invoice reference before paying.
-4. Record a partial payment and verify the next image contains the reduced balance.
-5. Record the final payment and verify the next image says **PAID IN FULL**.
-6. Retry the same invoice/payment request and confirm it does not create a duplicate successful message.
+1. Finalise a test invoice and confirm the invoice image reaches the test recipient.
+2. Send the invoice PDF and confirm the document template accepts the PDF.
+3. Record a payment and confirm the payment receipt PDF reaches the test recipient.
+4. Confirm the provider message ID is stored and the message state becomes `SENT`.
+5. Confirm `SENT` means Meta accepted the request; it does not prove customer delivery.
+6. Confirm failed messages can be retried manually and successful messages are not sent again.
+
+`WHATSAPP_PENDING_TIMEOUT` must be a positive ISO-8601 duration. Its default is `PT15M`.
+
+This phase has no Meta webhook integration, so delivery and read tracking are not available. `DELIVERED` must not be treated as provider-confirmed until webhook support is added in a later phase.
+
+## Delivery claim limitation
 
 ## Official Meta references
 
