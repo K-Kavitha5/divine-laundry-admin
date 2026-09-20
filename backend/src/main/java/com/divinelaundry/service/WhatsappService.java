@@ -6,7 +6,11 @@ import com.divinelaundry.domain.WhatsappMessage;
 import com.divinelaundry.repository.LaundryOrderRepository;
 import com.divinelaundry.repository.WhatsappMessageRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.time.Clock;
+import java.time.Duration;
 
 @Service
 public class WhatsappService {
@@ -19,7 +23,9 @@ public class WhatsappService {
     private final PdfReceiptService pdfReceipts;
     private final WhatsappCloudApiClient provider;
     private final WhatsappProviderProperties properties;
+    private final WhatsappMessageClaimService claims;
 
+    @Autowired
     public WhatsappService(
             WhatsappMessageRepository messages,
             LaundryOrderRepository orders,
@@ -30,6 +36,21 @@ public class WhatsappService {
             PdfReceiptService pdfReceipts,
             WhatsappCloudApiClient provider,
             WhatsappProviderProperties properties) {
+        this(messages, orders, documents, imageService, pdfInvoices, paymentReceipts, pdfReceipts,
+                provider, properties, new WhatsappMessageClaimService(messages, Clock.systemUTC(), Duration.ofMinutes(15)));
+    }
+
+    public WhatsappService(
+            WhatsappMessageRepository messages,
+            LaundryOrderRepository orders,
+            DocumentService documents,
+            InvoicePaymentImageService imageService,
+            PdfInvoiceService pdfInvoices,
+            PaymentReceiptService paymentReceipts,
+            PdfReceiptService pdfReceipts,
+            WhatsappCloudApiClient provider,
+            WhatsappProviderProperties properties,
+            WhatsappMessageClaimService claims) {
         this.messages = messages;
         this.orders = orders;
         this.documents = documents;
@@ -39,15 +60,14 @@ public class WhatsappService {
         this.pdfReceipts = pdfReceipts;
         this.provider = provider;
         this.properties = properties;
+        this.claims = claims;
     }
 
-    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public WhatsappMessage queueInvoice(String orderNumber) {
         LaundryOrder order = requiredInvoicedOrder(orderNumber);
         return deliver(order, "INVOICE_IMAGE:" + order.getInvoiceNumber());
     }
 
-    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public WhatsappMessage sendPaymentUpdate(String orderNumber, String paymentNumber) {
         LaundryOrder order = requiredInvoicedOrder(orderNumber);
         PaymentReceiptService.PaymentReceiptDocument receipt = paymentReceipts.document(orderNumber, paymentNumber);
@@ -58,7 +78,6 @@ public class WhatsappService {
                 receipt.orderTotal(), receipt.amountReceived(), receipt.remainingOutstanding()));
         }
 
-        @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
         public WhatsappMessage queueInvoicePdf(String orderNumber) {
         LaundryOrder order = requiredInvoicedOrder(orderNumber);
         DocumentService.DocumentBundle document = documents.document(orderNumber);
@@ -74,9 +93,8 @@ public class WhatsappService {
         if (phone == null || phone.isBlank()) {
             throw new IllegalStateException("Customer phone number is required for WhatsApp delivery");
         }
-        WhatsappMessage message = messages.findByDeduplicationKey(deduplicationKey)
-                .orElseGet(() -> new WhatsappMessage(
-                        deduplicationKey, order, phone, properties.templateName()));
+        WhatsappMessage message = getOrCreate(deduplicationKey,
+            () -> new WhatsappMessage(deduplicationKey, order, phone, properties.templateName()));
         if (message.isDeliveredOrSent()) return message;
 
         if (!provider.isConfigured()) {
@@ -84,9 +102,13 @@ public class WhatsappService {
             return messages.save(message);
         }
 
+        java.util.Optional<WhatsappMessage> claimed = claims.claim(deduplicationKey);
+        if (claimed.isEmpty()) {
+            return messages.findByDeduplicationKey(deduplicationKey).orElse(message);
+        }
+        message = claimed.get();
+        if (message.getDeliveryStatus() != com.divinelaundry.domain.WhatsappDeliveryStatus.PENDING) return message;
         try {
-            message.markPending();
-            messages.saveAndFlush(message);
             DocumentService.DocumentBundle bundle = documents.document(order.getOrderNumber());
             byte[] png = imageService.render(bundle);
             WhatsappCloudApiClient.DeliveryResult result = provider.sendInvoiceAndPaymentImage(
@@ -110,17 +132,21 @@ public class WhatsappService {
         private WhatsappMessage deliverDocument(LaundryOrder order, String deduplicationKey,
             byte[] pdf, String filename,
             WhatsappCloudApiClient.TemplateValues values) {
-        WhatsappMessage message = messages.findByDeduplicationKey(deduplicationKey)
-                .orElseGet(() -> new WhatsappMessage(deduplicationKey, order, order.getCustomer().getPhone(),
+        WhatsappMessage message = getOrCreate(deduplicationKey,
+            () -> new WhatsappMessage(deduplicationKey, order, order.getCustomer().getPhone(),
                 properties.documentTemplateName(), "DOCUMENT"));
         if (message.isDeliveredOrSent()) return message;
         if (!provider.isDocumentConfigured()) {
             message.waitingForProvider(provider.configurationMessage());
             return messages.save(message);
         }
+        java.util.Optional<WhatsappMessage> claimed = claims.claim(deduplicationKey);
+        if (claimed.isEmpty()) {
+            return messages.findByDeduplicationKey(deduplicationKey).orElse(message);
+        }
+        message = claimed.get();
+        if (message.getDeliveryStatus() != com.divinelaundry.domain.WhatsappDeliveryStatus.PENDING) return message;
         try {
-            message.markPending();
-            messages.saveAndFlush(message);
             WhatsappCloudApiClient.DeliveryResult result = provider.sendInvoiceAndPaymentDocument(
                     order.getCustomer().getPhone(), pdf, filename, values);
             message.markSent(result.mediaId(), result.providerMessageId());
@@ -128,6 +154,17 @@ public class WhatsappService {
             message.markFailed(error.getMessage());
         }
         return messages.save(message);
+    }
+
+    private WhatsappMessage getOrCreate(String deduplicationKey,
+            java.util.function.Supplier<WhatsappMessage> factory) {
+        return messages.findByDeduplicationKey(deduplicationKey).orElseGet(() -> {
+            try {
+                return messages.saveAndFlush(factory.get());
+            } catch (DataIntegrityViolationException duplicate) {
+                return messages.findByDeduplicationKey(deduplicationKey).orElseThrow(() -> duplicate);
+            }
+        });
     }
 
     private LaundryOrder requiredInvoicedOrder(String orderNumber) {

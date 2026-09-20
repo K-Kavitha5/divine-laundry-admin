@@ -48,6 +48,9 @@ public class WhatsappMessage {
     @Column(name = "sent_at")
     private Instant sentAt;
 
+    @Column(name = "claimed_at")
+    private Instant claimedAt;
+
     protected WhatsappMessage() {}
 
     public WhatsappMessage(String deduplicationKey, LaundryOrder order, String recipientPhone) {
@@ -114,4 +117,5 @@ public class WhatsappMessage {
     public String getLastError() { return lastError; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getSentAt() { return sentAt; }
+    public Instant getClaimedAt() { return claimedAt; }
 }

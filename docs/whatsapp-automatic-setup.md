@@ -69,6 +69,10 @@ Keep `WHATSAPP_ENABLED=false` until the template, phone number, access token and
 
 ## Production verification
 
+## Delivery claim limitation
+
+WhatsApp delivery uses a database-backed claim with a 15-minute stale-`PENDING` recovery window. If the provider accepts a message and the application crashes before saving `SENT`, a later manual retry may send a duplicate after that window. This phase does not implement an outbox or provider reconciliation workflow, so this crash window remains an accepted limitation.
+
 1. Finalise a test invoice and confirm the API status changes to `SENT`.
 2. Confirm the customer receives the PNG directly, not a hosted link.
 3. Scan the QR and verify payee, amount and invoice reference before paying.

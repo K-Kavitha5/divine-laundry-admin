@@ -50,6 +50,7 @@ app:
     template-language: ${WHATSAPP_TEMPLATE_LANGUAGE:en}
     document-template-name: ${WHATSAPP_DOCUMENT_TEMPLATE_NAME:}
     document-template-language: ${WHATSAPP_DOCUMENT_TEMPLATE_LANGUAGE:en}
+    pending-timeout: ${WHATSAPP_PENDING_TIMEOUT:PT15M}
   admin:
     username: ${ADMIN_USERNAME:admin}
     password: ${ADMIN_PASSWORD}
