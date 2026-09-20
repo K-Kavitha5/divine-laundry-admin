@@ -37,6 +37,24 @@ class WhatsappMessageClaimServiceTest {
         verify(repository).claimForDelivery(KEY, NOW, NOW.minus(Duration.ofMinutes(15)));
     }
 
+    @Test
+    void configuredFiveMinuteTimeoutUsesFiveMinuteStaleCutoff() {
+        WhatsappMessageRepository repository = repositoryReturning(1);
+
+        claimService(repository, Duration.ofMinutes(5)).claim(KEY);
+
+        verify(repository).claimForDelivery(KEY, NOW, NOW.minus(Duration.ofMinutes(5)));
+    }
+
+    @Test
+    void configuredFiveMinuteTimeoutDoesNotReclaimFreshPendingMessage() {
+        WhatsappMessageRepository repository = repositoryReturning(0);
+
+        assertThat(claimService(repository, Duration.ofMinutes(5)).claim(KEY)).isEmpty();
+
+        verify(repository).claimForDelivery(KEY, NOW, NOW.minus(Duration.ofMinutes(5)));
+    }
+
         @Test
         void pendingTimeoutMustBePositive() {
         WhatsappMessageRepository repository = mock(WhatsappMessageRepository.class);
@@ -123,8 +141,13 @@ class WhatsappMessageClaimServiceTest {
     }
 
     private static WhatsappMessageClaimService claimService(WhatsappMessageRepository repository) {
+        return claimService(repository, Duration.ofMinutes(15));
+        }
+
+        private static WhatsappMessageClaimService claimService(
+            WhatsappMessageRepository repository, Duration pendingTimeout) {
         return new WhatsappMessageClaimService(repository,
-                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofMinutes(15));
+            Clock.fixed(NOW, ZoneOffset.UTC), pendingTimeout);
     }
 
     private static WhatsappMessageRepository repositoryReturning(int rows) {

@@ -9,8 +9,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.time.Clock;
-import java.time.Duration;
 import java.util.Optional;
 
 @Service
@@ -27,20 +25,6 @@ public class WhatsappService {
     private final WhatsappMessageClaimService claims;
 
     @Autowired
-    public WhatsappService(
-            WhatsappMessageRepository messages,
-            LaundryOrderRepository orders,
-            DocumentService documents,
-            InvoicePaymentImageService imageService,
-            PdfInvoiceService pdfInvoices,
-            PaymentReceiptService paymentReceipts,
-            PdfReceiptService pdfReceipts,
-            WhatsappCloudApiClient provider,
-            WhatsappProviderProperties properties) {
-        this(messages, orders, documents, imageService, pdfInvoices, paymentReceipts, pdfReceipts,
-                provider, properties, new WhatsappMessageClaimService(messages, Clock.systemUTC(), Duration.ofMinutes(15)));
-    }
-
     public WhatsappService(
             WhatsappMessageRepository messages,
             LaundryOrderRepository orders,

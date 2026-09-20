@@ -11,8 +11,12 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -189,6 +193,47 @@ class WhatsappServiceTest {
                 .isInstanceOf(IllegalStateException.class);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.retry(order.getOrderNumber(), 2L))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void productionServiceUsesInjectedConfiguredClaimTimeout() {
+        WhatsappMessageRepository messages = mock(WhatsappMessageRepository.class);
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        DocumentService documents = mock(DocumentService.class);
+        InvoicePaymentImageService images = mock(InvoicePaymentImageService.class);
+        WhatsappCloudApiClient provider = mock(WhatsappCloudApiClient.class);
+        LaundryOrder order = invoicedOrder("configured-timeout", "INV-2026-000006");
+        String key = "INVOICE_IMAGE:INV-2026-000006";
+        WhatsappMessage message = new WhatsappMessage(key, order, "9876543210", "image-template");
+        Instant now = Instant.parse("2026-09-20T10:00:00Z");
+        AtomicReference<Instant> staleBefore = new AtomicReference<>();
+        when(orders.findByOrderNumber(order.getOrderNumber())).thenReturn(Optional.of(order));
+        when(messages.findByDeduplicationKey(key)).thenReturn(Optional.of(message));
+        when(messages.claimForDelivery(eq(key), eq(now), any())).thenAnswer(invocation -> {
+            staleBefore.set(invocation.getArgument(2));
+            message.markPending();
+            return 1;
+        });
+        DocumentService.DocumentBundle document = new DocumentService.DocumentBundle(null, order,
+                new PaymentService.PaymentSummary(order, BigDecimal.ZERO, order.getTotal(), List.of()), List.of());
+        when(documents.document(order.getOrderNumber())).thenReturn(document);
+        when(images.render(document)).thenReturn(new byte[]{1});
+        when(provider.isConfigured()).thenReturn(true);
+        when(provider.sendInvoiceAndPaymentImage(anyString(), any(), anyString(), any()))
+                .thenReturn(new WhatsappCloudApiClient.DeliveryResult("media", "wamid"));
+        when(messages.save(any(WhatsappMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        WhatsappMessageClaimService configuredClaims = new WhatsappMessageClaimService(
+                messages, Clock.fixed(now, ZoneOffset.UTC), Duration.ofMinutes(5));
+        WhatsappService service = new WhatsappService(messages, orders, documents, images,
+                mock(PdfInvoiceService.class), mock(PaymentReceiptService.class), mock(PdfReceiptService.class),
+                provider, properties(), configuredClaims);
+
+        WhatsappMessage result = service.queueInvoice(order.getOrderNumber());
+
+        assertThat(staleBefore).hasValue(now.minus(Duration.ofMinutes(5)));
+        assertThat(result.getDeliveryStatus()).isEqualTo(com.divinelaundry.domain.WhatsappDeliveryStatus.SENT);
+        verify(provider).sendInvoiceAndPaymentImage(anyString(), any(), anyString(), any());
     }
 
         private static LaundryOrder invoicedOrder(String requestId, String invoiceNumber) {
