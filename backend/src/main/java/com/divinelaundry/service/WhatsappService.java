@@ -124,7 +124,7 @@ public class WhatsappService {
                             bundle.paymentSummary().balance()));
             message.markSent(result.mediaId(), result.providerMessageId());
         } catch (RuntimeException error) {
-            message.markFailed(error.getMessage());
+            message.markFailed(failureDescription(error));
         }
         return messages.save(message);
     }
@@ -151,7 +151,7 @@ public class WhatsappService {
                     order.getCustomer().getPhone(), pdf, filename, values);
             message.markSent(result.mediaId(), result.providerMessageId());
         } catch (RuntimeException error) {
-            message.markFailed(error.getMessage());
+            message.markFailed(failureDescription(error));
         }
         return messages.save(message);
     }
@@ -165,6 +165,13 @@ public class WhatsappService {
                 return messages.findByDeduplicationKey(deduplicationKey).orElseThrow(() -> duplicate);
             }
         });
+    }
+
+    private static String failureDescription(RuntimeException error) {
+        if (error instanceof WhatsappCloudApiClient.WhatsappProviderException providerError) {
+            return providerError.classification().name();
+        }
+        return WhatsappFailureClassification.UNKNOWN_FAILURE.name();
     }
 
     private LaundryOrder requiredInvoicedOrder(String orderNumber) {

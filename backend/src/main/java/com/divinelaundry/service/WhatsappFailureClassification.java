@@ -1,0 +1,13 @@
+package com.divinelaundry.service;
+
+enum WhatsappFailureClassification {
+    AUTHENTICATION_FAILURE,
+    CONFIGURATION_FAILURE,
+    RATE_LIMITED,
+    PROVIDER_CLIENT_ERROR,
+    PROVIDER_SERVER_ERROR,
+    NETWORK_FAILURE,
+    TIMEOUT,
+    MALFORMED_PROVIDER_RESPONSE,
+    UNKNOWN_FAILURE
+}

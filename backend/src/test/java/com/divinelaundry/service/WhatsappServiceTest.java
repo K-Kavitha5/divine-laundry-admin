@@ -117,10 +117,54 @@ class WhatsappServiceTest {
         assertThat(result.getDeduplicationKey()).isEqualTo("RECEIPT_PDF:PAY-2026-000001");
         assertThat(result.getMediaType()).isEqualTo("DOCUMENT");
         assertThat(result.getProviderMessageId()).isEqualTo("wamid.1");
+        assertThat(result.getDeliveryStatus()).isEqualTo(com.divinelaundry.domain.WhatsappDeliveryStatus.SENT);
         verify(provider).sendInvoiceAndPaymentDocument(eq("9876543210"), eq(pdf),
                 eq("PAY-2026-000001.pdf"), argThat(values -> values.invoiceNumber().equals("PAY-2026-000001")
                         && values.amountPaid().compareTo(new BigDecimal("400.00")) == 0));
         verifyNoInteractions(images, invoices, documents);
+    }
+
+    @Test
+    void classifiedProviderFailureIsPersistedSafelyAndFailedRetryCanSucceed() {
+        WhatsappMessageRepository messages = mock(WhatsappMessageRepository.class);
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        PaymentReceiptService receipts = mock(PaymentReceiptService.class);
+        PdfReceiptService receiptPdfs = mock(PdfReceiptService.class);
+        WhatsappCloudApiClient provider = mock(WhatsappCloudApiClient.class);
+        WhatsappMessageClaimService claims = mock(WhatsappMessageClaimService.class);
+        LaundryOrder order = invoicedOrder("retry-send", "INV-2026-000004");
+        var receipt = new PaymentReceiptService.PaymentReceiptDocument(null, "PAY-4", "PAY-4",
+                Instant.parse("2026-09-20T10:00:00Z"), "CASH", "REF", "admin", order.getOrderNumber(),
+                order.getInvoiceNumber(), "Customer", "9876543210", null, "Trichy", BigDecimal.TEN,
+                BigDecimal.TEN, BigDecimal.ONE, BigDecimal.ZERO, "PAID");
+        WhatsappMessage message = new WhatsappMessage("RECEIPT_PDF:PAY-4", order,
+                order.getCustomer().getPhone(), "document-template", "DOCUMENT");
+        when(orders.findByOrderNumber(order.getOrderNumber())).thenReturn(Optional.of(order));
+        when(receipts.document(order.getOrderNumber(), "PAY-4")).thenReturn(receipt);
+        when(receiptPdfs.render(receipt)).thenReturn(new byte[]{'%', 'P', 'D', 'F'});
+        when(provider.isDocumentConfigured()).thenReturn(true);
+        when(messages.findByDeduplicationKey("RECEIPT_PDF:PAY-4")).thenReturn(Optional.of(message));
+        when(messages.save(any(WhatsappMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(claims.claim("RECEIPT_PDF:PAY-4")).thenAnswer(invocation -> {
+            message.markPending();
+            return Optional.of(message);
+        });
+        when(provider.sendInvoiceAndPaymentDocument(anyString(), any(), anyString(), any()))
+                .thenThrow(new WhatsappCloudApiClient.WhatsappProviderException(
+                        WhatsappFailureClassification.AUTHENTICATION_FAILURE, "HTTP 401"))
+                .thenReturn(new WhatsappCloudApiClient.DeliveryResult("media-4", "wamid.4"));
+        WhatsappService service = new WhatsappService(messages, orders, mock(DocumentService.class),
+                mock(InvoicePaymentImageService.class), mock(PdfInvoiceService.class), receipts, receiptPdfs,
+                provider, properties(), claims);
+
+        WhatsappMessage failed = service.sendPaymentUpdate(order.getOrderNumber(), "PAY-4");
+        assertThat(failed.getDeliveryStatus()).isEqualTo(com.divinelaundry.domain.WhatsappDeliveryStatus.FAILED);
+        assertThat(failed.getLastError()).isEqualTo("AUTHENTICATION_FAILURE");
+        assertThat(failed.getLastError()).doesNotContain("HTTP 401", "Bearer", "token", "provider");
+
+        WhatsappMessage sent = service.sendPaymentUpdate(order.getOrderNumber(), "PAY-4");
+        assertThat(sent.getDeliveryStatus()).isEqualTo(com.divinelaundry.domain.WhatsappDeliveryStatus.SENT);
+        verify(provider, times(2)).sendInvoiceAndPaymentDocument(anyString(), any(), anyString(), any());
     }
 
         private static LaundryOrder invoicedOrder(String requestId, String invoiceNumber) {

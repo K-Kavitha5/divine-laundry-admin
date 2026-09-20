@@ -1,15 +1,18 @@
 package com.divinelaundry.service;
 
 import com.divinelaundry.config.WhatsappProviderProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
@@ -19,16 +22,22 @@ import java.util.regex.Pattern;
 @Component
 public class WhatsappCloudApiClient {
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(35);
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Pattern RESPONSE_ID = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
 
     private final WhatsappProviderProperties properties;
     private final HttpClient http;
+    private final Duration requestTimeout;
 
+    @Autowired
     public WhatsappCloudApiClient(WhatsappProviderProperties properties) {
+        this(properties, HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build(), REQUEST_TIMEOUT);
+    }
+
+    WhatsappCloudApiClient(WhatsappProviderProperties properties, HttpClient http, Duration requestTimeout) {
         this.properties = properties;
-        this.http = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.http = http;
+        this.requestTimeout = requestTimeout;
     }
 
     public boolean isConfigured() {
@@ -137,24 +146,39 @@ public class WhatsappCloudApiClient {
     }
 
     private HttpRequest.Builder request(String endpoint) {
-        return HttpRequest.newBuilder(URI.create(endpoint))
-                .timeout(REQUEST_TIMEOUT)
+        try {
+            return HttpRequest.newBuilder(URI.create(endpoint))
+                .timeout(requestTimeout)
                 .header("Authorization", "Bearer " + properties.accessToken())
                 .header("Accept", "application/json");
+        } catch (IllegalArgumentException error) {
+            throw new WhatsappProviderException(
+                    WhatsappFailureClassification.CONFIGURATION_FAILURE,
+                    "WhatsApp endpoint configuration is invalid", error);
+        }
     }
 
     private String execute(HttpRequest request, String operation) {
         try {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new WhatsappProviderException("%s failed (%d)".formatted(operation, response.statusCode()));
+                throw new WhatsappProviderException(classificationFor(response.statusCode()),
+                        "%s failed with HTTP %d".formatted(operation, response.statusCode()));
             }
             return response.body();
+        } catch (HttpTimeoutException error) {
+            throw new WhatsappProviderException(WhatsappFailureClassification.TIMEOUT,
+                    operation + " timed out", error);
+        } catch (ConnectException error) {
+            throw new WhatsappProviderException(WhatsappFailureClassification.NETWORK_FAILURE,
+                    operation + " could not connect", error);
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
-            throw new WhatsappProviderException(operation + " was interrupted", error);
+            throw new WhatsappProviderException(WhatsappFailureClassification.NETWORK_FAILURE,
+                    operation + " was interrupted", error);
         } catch (IOException error) {
-            throw new WhatsappProviderException(operation + " failed", error);
+            throw new WhatsappProviderException(WhatsappFailureClassification.NETWORK_FAILURE,
+                    operation + " failed", error);
         }
     }
 
@@ -186,9 +210,18 @@ public class WhatsappCloudApiClient {
     private static String responseId(String body, String operation) {
         Matcher matcher = RESPONSE_ID.matcher(body == null ? "" : body);
         if (!matcher.find() || matcher.group(1).isBlank()) {
-            throw new WhatsappProviderException(operation + " did not return an ID");
+            throw new WhatsappProviderException(WhatsappFailureClassification.MALFORMED_PROVIDER_RESPONSE,
+                    operation + " did not return a message ID");
         }
         return matcher.group(1);
+    }
+
+    private static WhatsappFailureClassification classificationFor(int statusCode) {
+        if (statusCode == 401 || statusCode == 403) return WhatsappFailureClassification.AUTHENTICATION_FAILURE;
+        if (statusCode == 429) return WhatsappFailureClassification.RATE_LIMITED;
+        if (statusCode >= 400 && statusCode < 500) return WhatsappFailureClassification.PROVIDER_CLIENT_ERROR;
+        if (statusCode >= 500) return WhatsappFailureClassification.PROVIDER_SERVER_ERROR;
+        return WhatsappFailureClassification.UNKNOWN_FAILURE;
     }
 
     private static String jsonString(String value) {
@@ -246,7 +279,20 @@ public class WhatsappCloudApiClient {
     public enum WhatsAppMediaType { IMAGE, DOCUMENT }
 
     public static class WhatsappProviderException extends RuntimeException {
-        public WhatsappProviderException(String message) { super(message); }
-        public WhatsappProviderException(String message, Throwable cause) { super(message, cause); }
+        private final WhatsappFailureClassification classification;
+
+        public WhatsappProviderException(WhatsappFailureClassification classification, String message) {
+            super(message);
+            this.classification = classification;
+        }
+
+        public WhatsappProviderException(WhatsappFailureClassification classification, String message, Throwable cause) {
+            super(message, cause);
+            this.classification = classification;
+        }
+
+        public WhatsappFailureClassification classification() {
+            return classification;
+        }
     }
 }

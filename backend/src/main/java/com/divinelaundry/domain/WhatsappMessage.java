@@ -71,17 +71,23 @@ public class WhatsappMessage {
     }
 
     public void waitingForProvider(String reason) {
+        requireNotTerminal();
         this.deliveryStatus = WhatsappDeliveryStatus.WAITING_FOR_PROVIDER;
         this.lastError = abbreviate(reason);
     }
 
     public void markPending() {
+        if (deliveryStatus != WhatsappDeliveryStatus.WAITING_FOR_PROVIDER
+                && deliveryStatus != WhatsappDeliveryStatus.FAILED) {
+            throw new IllegalStateException("Only waiting or failed WhatsApp messages can become pending");
+        }
         this.deliveryStatus = WhatsappDeliveryStatus.PENDING;
         this.attemptCount++;
         this.lastError = null;
     }
 
     public void markSent(String mediaId, String providerMessageId) {
+        requirePending();
         this.mediaStorageKey = mediaId;
         this.providerMessageId = providerMessageId;
         this.deliveryStatus = WhatsappDeliveryStatus.SENT;
@@ -90,8 +96,21 @@ public class WhatsappMessage {
     }
 
     public void markFailed(String error) {
+        requirePending();
         this.deliveryStatus = WhatsappDeliveryStatus.FAILED;
         this.lastError = abbreviate(error);
+    }
+
+    private void requirePending() {
+        if (deliveryStatus != WhatsappDeliveryStatus.PENDING) {
+            throw new IllegalStateException("Only pending WhatsApp messages can change delivery outcome");
+        }
+    }
+
+    private void requireNotTerminal() {
+        if (isDeliveredOrSent()) {
+            throw new IllegalStateException("Terminal WhatsApp messages cannot change state");
+        }
     }
 
     public boolean isDeliveredOrSent() {
