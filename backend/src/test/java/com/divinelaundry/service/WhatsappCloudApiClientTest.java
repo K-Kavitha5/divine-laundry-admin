@@ -51,6 +51,44 @@ class WhatsappCloudApiClientTest {
         }
     }
 
+    @Test
+    void uploadsPdfAndSendsDocumentTemplateWithoutExposingCredentials() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicReference<String> mediaRequest = new AtomicReference<>();
+        AtomicReference<String> messageRequest = new AtomicReference<>();
+        server.createContext("/v-test/123/media", exchange -> {
+            mediaRequest.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.ISO_8859_1));
+            respond(exchange, "{\"id\":\"media-pdf\"}");
+        });
+        server.createContext("/v-test/123/messages", exchange -> {
+            messageRequest.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, "{\"messages\":[{\"id\":\"wamid.pdf\"}]}");
+        });
+        server.start();
+        try {
+            String token = "token-never-in-request-body";
+            WhatsappProviderProperties properties = new WhatsappProviderProperties(
+                    true, "http://127.0.0.1:" + server.getAddress().getPort(), "v-test", "123",
+                    token, "image_template", "en", "document_template", "en");
+            WhatsappCloudApiClient client = new WhatsappCloudApiClient(properties);
+
+            WhatsappCloudApiClient.DeliveryResult result = client.sendInvoiceAndPaymentDocument(
+                    "9876543210", new byte[]{'%', 'P', 'D', 'F'}, "PAY-1.pdf",
+                    new WhatsappCloudApiClient.TemplateValues(
+                            "Receipt Customer", "PAY-1", "SO-1",
+                            new BigDecimal("1000.00"), new BigDecimal("400.00"), new BigDecimal("600.00")));
+
+            assertThat(result.mediaId()).isEqualTo("media-pdf");
+            assertThat(result.providerMessageId()).isEqualTo("wamid.pdf");
+            assertThat(mediaRequest.get()).contains("application/pdf", "PAY-1.pdf", "%PDF");
+            assertThat(messageRequest.get()).contains("document_template", "\"type\":\"document\"", "media-pdf", "919876543210");
+            assertThat(mediaRequest.get()).doesNotContain(token);
+            assertThat(messageRequest.get()).doesNotContain(token);
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private static void respond(HttpExchange exchange, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");

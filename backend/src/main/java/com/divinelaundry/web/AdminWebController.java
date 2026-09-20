@@ -18,6 +18,7 @@ import org.springframework.data.domain.Sort;
 import java.security.Principal;
 import java.time.*;
 import java.util.*;
+import com.divinelaundry.config.WhatsappProviderProperties;
 
 @Controller
 public class AdminWebController {
@@ -33,6 +34,7 @@ public class AdminWebController {
     private final PdfInvoiceService pdfInvoices;
     private final PaymentReceiptService paymentReceipts;
     private final PdfReceiptService pdfReceipts;
+    private final WhatsappService whatsapp;
     private final WhatsappMessageRepository messages;
         private final PaymentRepository paymentRows;
         private final OrderStatusHistoryRepository statusHistory;
@@ -45,6 +47,7 @@ public class AdminWebController {
     private final ZoneId zone;
     private final String businessName;
     private final boolean upiConfigured;
+    private final WhatsappProviderProperties whatsappProperties;
 
     public AdminWebController(CustomerRepository customers, LaundryServiceRepository catalog,
             LaundryOrderRepository orders, CustomerWebService customerService, WebOrderService webOrders,
@@ -52,7 +55,8 @@ public class AdminWebController {
             WhatsappMessageRepository messages, GarmentTagRepository garmentTags, @Value("${app.business-zone}") String zone,
             @Value("${app.business.name}") String businessName, @Value("${app.payment.upi-id:}") String upiId,
             PaymentRepository paymentRows, OrderStatusHistoryRepository statusHistory, OrderService orderService,
-            PdfInvoiceService pdfInvoices, PaymentReceiptService paymentReceipts, PdfReceiptService pdfReceipts) {
+            PdfInvoiceService pdfInvoices, PaymentReceiptService paymentReceipts, PdfReceiptService pdfReceipts,
+            WhatsappProviderProperties whatsappProperties, WhatsappService whatsapp) {
         this.customers = customers; this.catalog = catalog; this.orders = orders;
         this.customerService = customerService; this.webOrders = webOrders;
         this.payments = payments; this.documents = documents; this.images = images;
@@ -61,6 +65,8 @@ public class AdminWebController {
         this.messages = messages; this.garmentTags = garmentTags; this.zone = ZoneId.of(zone); this.businessName = businessName;
         this.upiConfigured = !upiId.isBlank(); this.paymentRows = paymentRows;
         this.statusHistory = statusHistory; this.orderService = orderService;
+        this.whatsappProperties = whatsappProperties;
+        this.whatsapp = whatsapp;
     }
 
     @InitBinder
@@ -71,6 +77,8 @@ public class AdminWebController {
         model.addAttribute("businessName", businessName);
         model.addAttribute("businessZone", zone);
         model.addAttribute("upiConfigured", upiConfigured);
+        model.addAttribute("whatsappImageConfigured", whatsappProperties.isConfigured());
+        model.addAttribute("whatsappDocumentConfigured", whatsappProperties.isDocumentConfigured());
     }
 
     @GetMapping("/login")
@@ -331,6 +339,29 @@ public class AdminWebController {
             model.addAttribute("receipt", paymentReceipts.document(number, paymentNumber));
             return "payment-receipt";
             }
+
+        @PostMapping("/orders/{number}/payments/{paymentNumber}/whatsapp")
+        String sendReceiptWhatsapp(@PathVariable String number, @PathVariable String paymentNumber,
+                RedirectAttributes redirect) {
+            try {
+                whatsapp.sendPaymentUpdate(number, paymentNumber);
+                redirect.addFlashAttribute("success", "Receipt WhatsApp send requested.");
+            } catch (IllegalArgumentException | IllegalStateException ex) {
+                redirect.addFlashAttribute("error", ex.getMessage());
+            }
+            return "redirect:/orders/" + number;
+        }
+
+        @PostMapping("/orders/{number}/invoice-pdf/whatsapp")
+        String sendInvoicePdfWhatsapp(@PathVariable String number, RedirectAttributes redirect) {
+            try {
+                whatsapp.queueInvoicePdf(number);
+                redirect.addFlashAttribute("success", "Invoice PDF WhatsApp send requested.");
+            } catch (IllegalArgumentException | IllegalStateException ex) {
+                redirect.addFlashAttribute("error", ex.getMessage());
+            }
+            return "redirect:/orders/" + number;
+        }
 
             @GetMapping(value = "/orders/{number}/payments/{paymentNumber}/receipt.pdf",
                 produces = MediaType.APPLICATION_PDF_VALUE)

@@ -1,6 +1,7 @@
 package com.divinelaundry.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 @ConfigurationProperties(prefix = "app.whatsapp")
 public record WhatsappProviderProperties(
@@ -10,7 +11,25 @@ public record WhatsappProviderProperties(
         String phoneNumberId,
         String accessToken,
         String templateName,
-        String templateLanguage) {
+        String templateLanguage,
+        String documentTemplateName,
+        String documentTemplateLanguage) {
+
+    @ConstructorBinding
+    public WhatsappProviderProperties {
+    }
+
+    public WhatsappProviderProperties(
+            boolean enabled,
+            String graphBaseUrl,
+            String graphApiVersion,
+            String phoneNumberId,
+            String accessToken,
+            String templateName,
+            String templateLanguage) {
+        this(enabled, graphBaseUrl, graphApiVersion, phoneNumberId, accessToken,
+                templateName, templateLanguage, "", templateLanguage);
+    }
 
     public boolean isConfigured() {
         return enabled
@@ -30,6 +49,18 @@ public record WhatsappProviderProperties(
         if (!hasText(templateName)) return "WHATSAPP_TEMPLATE_NAME is required";
         if (!hasText(templateLanguage)) return "WHATSAPP_TEMPLATE_LANGUAGE is required";
         return "WhatsApp provider configuration is incomplete";
+    }
+
+    public String documentConfigurationMessage() {
+        if (!enabled) return "WhatsApp automatic sending is disabled";
+        if (!hasText(documentTemplateName)) return "WHATSAPP_DOCUMENT_TEMPLATE_NAME is required";
+        if (!hasText(documentTemplateLanguage)) return "WHATSAPP_DOCUMENT_TEMPLATE_LANGUAGE is required";
+        if (!isConfigured()) return configurationMessage();
+        return "WhatsApp document provider configuration is incomplete";
+    }
+
+    public boolean isDocumentConfigured() {
+        return isConfigured() && hasText(documentTemplateName) && hasText(documentTemplateLanguage);
     }
 
     public String endpoint(String resource) {

@@ -55,10 +55,16 @@ public class WhatsappMessage {
     }
 
     public WhatsappMessage(String deduplicationKey, LaundryOrder order, String recipientPhone, String templateName) {
+        this(deduplicationKey, order, recipientPhone, templateName, "IMAGE");
+    }
+
+    public WhatsappMessage(String deduplicationKey, LaundryOrder order, String recipientPhone,
+            String templateName, String mediaType) {
         this.deduplicationKey = deduplicationKey;
         this.order = order;
         this.recipientPhone = recipientPhone;
         this.templateName = templateName;
+        this.mediaType = mediaType;
     }
 
     public void waitingForProvider(String reason) {

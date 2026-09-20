@@ -5,6 +5,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
+import com.divinelaundry.service.PaymentReceiptService;
 
 @RestControllerAdvice(basePackages = "com.divinelaundry.api")
 public class ApiExceptionHandler {
@@ -27,6 +28,12 @@ public class ApiExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     ErrorResponse conflict(DataIntegrityViolationException ex) {
         return new ErrorResponse(Instant.now(), "This request was already saved or conflicts with an existing record. Refresh before retrying.");
+    }
+
+    @ExceptionHandler(PaymentReceiptService.PaymentReceiptNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ErrorResponse receiptNotFound() {
+        return new ErrorResponse(Instant.now(), "Payment receipt not found");
     }
 
     public record ErrorResponse(Instant timestamp, String message) {}

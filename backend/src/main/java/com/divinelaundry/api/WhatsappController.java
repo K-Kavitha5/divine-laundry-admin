@@ -21,6 +21,18 @@ public class WhatsappController {
         return WhatsappQueueResponse.from(whatsapp.queueInvoice(orderNumber));
     }
 
+    @PostMapping("/invoice/{orderNumber}/pdf/queue")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    WhatsappQueueResponse queueInvoicePdf(@PathVariable String orderNumber) {
+        return WhatsappQueueResponse.from(whatsapp.queueInvoicePdf(orderNumber));
+    }
+
+    @PostMapping("/orders/{orderNumber}/payments/{paymentNumber}/receipt")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    WhatsappQueueResponse sendReceipt(@PathVariable String orderNumber, @PathVariable String paymentNumber) {
+        return WhatsappQueueResponse.from(whatsapp.sendPaymentUpdate(orderNumber, paymentNumber));
+    }
+
     public record WhatsappQueueResponse(
             String orderNumber,
             String invoiceNumber,

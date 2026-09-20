@@ -39,22 +39,51 @@ public class WhatsappCloudApiClient {
         return properties.configurationMessage();
     }
 
+    public boolean isDocumentConfigured() {
+        return properties.isDocumentConfigured();
+    }
+
     public DeliveryResult sendInvoiceAndPaymentImage(
             String recipientPhone,
             byte[] png,
             String filename,
             TemplateValues values) {
+        return sendMediaTemplate(recipientPhone,
+                new WhatsAppMedia(png, filename, "image/png", WhatsAppMediaType.IMAGE),
+                properties.templateName(), properties.templateLanguage(), values);
+    }
+
+    public DeliveryResult sendInvoiceAndPaymentDocument(
+            String recipientPhone,
+            byte[] pdf,
+            String filename,
+            TemplateValues values) {
+        if (!properties.isDocumentConfigured()) {
+            throw new IllegalStateException(properties.documentConfigurationMessage());
+        }
+        return sendMediaTemplate(recipientPhone,
+                new WhatsAppMedia(pdf, filename, "application/pdf", WhatsAppMediaType.DOCUMENT),
+                properties.documentTemplateName(), properties.documentTemplateLanguage(), values);
+    }
+
+    private DeliveryResult sendMediaTemplate(
+            String recipientPhone,
+            WhatsAppMedia media,
+            String templateName,
+            String templateLanguage,
+            TemplateValues values) {
         if (!properties.isConfigured()) {
             throw new IllegalStateException(properties.configurationMessage());
         }
-        String mediaId = uploadPng(png, filename);
-        String messageId = sendUtilityTemplate(normalizeIndianPhone(recipientPhone), mediaId, values);
+        String mediaId = upload(media);
+        String messageId = sendUtilityTemplate(normalizeIndianPhone(recipientPhone), mediaId,
+                media.mediaType(), templateName, templateLanguage, values);
         return new DeliveryResult(mediaId, messageId);
     }
 
-    private String uploadPng(byte[] png, String filename) {
+    private String upload(WhatsAppMedia media) {
         String boundary = "----DivineLaundry" + UUID.randomUUID().toString().replace("-", "");
-        byte[] body = multipart(boundary, png, filename);
+        byte[] body = multipart(boundary, media);
         HttpRequest request = request(properties.endpoint("media"))
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
@@ -62,7 +91,9 @@ public class WhatsappCloudApiClient {
         return responseId(execute(request, "WhatsApp media upload"), "WhatsApp media upload");
     }
 
-    private String sendUtilityTemplate(String phone, String mediaId, TemplateValues values) {
+    private String sendUtilityTemplate(String phone, String mediaId, WhatsAppMediaType mediaType,
+            String templateName, String templateLanguage, TemplateValues values) {
+        String headerType = mediaType == WhatsAppMediaType.DOCUMENT ? "document" : "image";
         String payload = """
                 {
                   "messaging_product":"whatsapp",
@@ -73,7 +104,7 @@ public class WhatsappCloudApiClient {
                     "name":%s,
                     "language":{"code":%s},
                     "components":[
-                      {"type":"header","parameters":[{"type":"image","image":{"id":%s}}]},
+                      {"type":"header","parameters":[{"type":"%s","%s":{"id":%s}}]},
                       {"type":"body","parameters":[
                         {"type":"text","text":%s},
                         {"type":"text","text":%s},
@@ -87,8 +118,10 @@ public class WhatsappCloudApiClient {
                 }
                 """.formatted(
                 jsonString(phone),
-                jsonString(properties.templateName()),
-                jsonString(properties.templateLanguage()),
+                jsonString(templateName),
+                jsonString(templateLanguage),
+                headerType,
+                headerType,
                 jsonString(mediaId),
                 jsonString(values.customerName()),
                 jsonString(values.invoiceNumber()),
@@ -114,8 +147,7 @@ public class WhatsappCloudApiClient {
         try {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new WhatsappProviderException("%s failed (%d): %s".formatted(
-                        operation, response.statusCode(), abbreviate(response.body())));
+                throw new WhatsappProviderException("%s failed (%d)".formatted(operation, response.statusCode()));
             }
             return response.body();
         } catch (InterruptedException error) {
@@ -126,16 +158,16 @@ public class WhatsappCloudApiClient {
         }
     }
 
-    private static byte[] multipart(String boundary, byte[] png, String filename) {
+    private static byte[] multipart(String boundary, WhatsAppMedia media) {
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             field(output, boundary, "messaging_product", "whatsapp");
-            field(output, boundary, "type", "image/png");
+                field(output, boundary, "type", media.contentType());
             output.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
             output.write(("Content-Disposition: form-data; name=\"file\"; filename=\""
-                    + safeFilename(filename) + "\"\r\n").getBytes(StandardCharsets.UTF_8));
-            output.write("Content-Type: image/png\r\n\r\n".getBytes(StandardCharsets.UTF_8));
-            output.write(png);
+                    + safeFilename(media.filename()) + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+                output.write(("Content-Type: " + media.contentType() + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                output.write(media.bytes());
             output.write("\r\n".getBytes(StandardCharsets.UTF_8));
             output.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
             return output.toByteArray();
@@ -199,12 +231,6 @@ public class WhatsappCloudApiClient {
         return (filename == null ? "invoice.png" : filename).replaceAll("[^A-Za-z0-9._-]", "_");
     }
 
-    private static String abbreviate(String value) {
-        if (value == null) return "No response body";
-        String cleaned = value.replaceAll("\\s+", " ").trim();
-        return cleaned.length() <= 450 ? cleaned : cleaned.substring(0, 447) + "...";
-    }
-
     public record TemplateValues(
             String customerName,
             String invoiceNumber,
@@ -214,6 +240,10 @@ public class WhatsappCloudApiClient {
             BigDecimal balance) {}
 
     public record DeliveryResult(String mediaId, String providerMessageId) {}
+
+    public record WhatsAppMedia(byte[] bytes, String filename, String contentType, WhatsAppMediaType mediaType) {}
+
+    public enum WhatsAppMediaType { IMAGE, DOCUMENT }
 
     public static class WhatsappProviderException extends RuntimeException {
         public WhatsappProviderException(String message) { super(message); }
