@@ -252,12 +252,24 @@ public class WhatsappCloudApiClient {
 
     static String normalizeIndianPhone(String value) {
         String digits = value == null ? "" : value.replaceAll("\\D", "");
-        if (digits.length() == 10) digits = "91" + digits;
-        if (digits.length() == 11 && digits.startsWith("0")) digits = "91" + digits.substring(1);
-        if (digits.length() < 11 || digits.length() > 15) {
+        if (digits.length() == 10 && validIndianLocalNumber(digits)) digits = "91" + digits;
+        if (digits.length() == 11 && digits.startsWith("0") && validIndianLocalNumber(digits.substring(1))) {
+            digits = "91" + digits.substring(1);
+        }
+        if (digits.length() == 12 && digits.startsWith("91") && validIndianLocalNumber(digits.substring(2))) {
+            return digits;
+        }
+        if (digits.length() < 11 || digits.length() > 15
+            || digits.length() == 10
+            || (digits.length() == 11 && digits.startsWith("0"))
+            || (digits.length() == 12 && digits.startsWith("91"))) {
             throw new IllegalArgumentException("Customer WhatsApp number must include a valid country code");
         }
         return digits;
+    }
+
+    private static boolean validIndianLocalNumber(String digits) {
+        return digits.length() == 10 && digits.charAt(0) >= '6' && digits.charAt(0) <= '9';
     }
 
     private static String safeFilename(String filename) {

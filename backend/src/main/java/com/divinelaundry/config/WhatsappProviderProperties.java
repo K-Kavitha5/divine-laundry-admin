@@ -3,6 +3,8 @@ package com.divinelaundry.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
+import java.net.URI;
+
 @ConfigurationProperties(prefix = "app.whatsapp")
 public record WhatsappProviderProperties(
         boolean enabled,
@@ -17,6 +19,14 @@ public record WhatsappProviderProperties(
 
     @ConstructorBinding
     public WhatsappProviderProperties {
+        graphBaseUrl = trim(graphBaseUrl);
+        graphApiVersion = trim(graphApiVersion);
+        phoneNumberId = trim(phoneNumberId);
+        accessToken = trim(accessToken);
+        templateName = trim(templateName);
+        templateLanguage = trim(templateLanguage);
+        documentTemplateName = trim(documentTemplateName);
+        documentTemplateLanguage = trim(documentTemplateLanguage);
     }
 
     public WhatsappProviderProperties(
@@ -33,9 +43,9 @@ public record WhatsappProviderProperties(
 
     public boolean isConfigured() {
         return enabled
-                && hasText(graphBaseUrl)
+                && validGraphBaseUrl()
                 && hasText(graphApiVersion)
-                && hasText(phoneNumberId)
+                && validPhoneNumberId()
                 && hasText(accessToken)
                 && hasText(templateName)
                 && hasText(templateLanguage);
@@ -43,8 +53,9 @@ public record WhatsappProviderProperties(
 
     public String configurationMessage() {
         if (!enabled) return "WhatsApp automatic sending is disabled";
+        if (!validGraphBaseUrl()) return "WHATSAPP_GRAPH_BASE_URL must be an HTTP(S) URL";
         if (!hasText(graphApiVersion)) return "WHATSAPP_GRAPH_API_VERSION is required";
-        if (!hasText(phoneNumberId)) return "WHATSAPP_PHONE_NUMBER_ID is required";
+        if (!validPhoneNumberId()) return "WHATSAPP_PHONE_NUMBER_ID is invalid";
         if (!hasText(accessToken)) return "WHATSAPP_ACCESS_TOKEN is required";
         if (!hasText(templateName)) return "WHATSAPP_TEMPLATE_NAME is required";
         if (!hasText(templateLanguage)) return "WHATSAPP_TEMPLATE_LANGUAGE is required";
@@ -71,5 +82,30 @@ public record WhatsappProviderProperties(
 
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    public String configurationState() {
+        if (!enabled) return "DISABLED";
+        return isConfigured() && isDocumentConfigured() ? "ENABLED_CONFIGURED" : "ENABLED_CONFIGURATION_INCOMPLETE";
+    }
+
+    private boolean validGraphBaseUrl() {
+        if (!hasText(graphBaseUrl)) return false;
+        try {
+            URI uri = URI.create(graphBaseUrl);
+            return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+                    && hasText(uri.getHost()) && uri.getUserInfo() == null
+                    && uri.getRawQuery() == null && uri.getRawFragment() == null;
+        } catch (IllegalArgumentException error) {
+            return false;
+        }
+    }
+
+    private boolean validPhoneNumberId() {
+        return hasText(phoneNumberId) && phoneNumberId.matches("[A-Za-z0-9_-]+");
+    }
+
+    private static String trim(String value) {
+        return value == null ? null : value.trim();
     }
 }

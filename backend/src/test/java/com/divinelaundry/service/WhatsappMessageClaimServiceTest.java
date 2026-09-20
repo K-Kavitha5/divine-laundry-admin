@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class WhatsappMessageClaimServiceTest {
     private static final Instant NOW = Instant.parse("2026-09-20T10:00:00Z");
@@ -35,6 +36,18 @@ class WhatsappMessageClaimServiceTest {
         assertThat(result).containsSame(message);
         verify(repository).claimForDelivery(KEY, NOW, NOW.minus(Duration.ofMinutes(15)));
     }
+
+        @Test
+        void pendingTimeoutMustBePositive() {
+        WhatsappMessageRepository repository = mock(WhatsappMessageRepository.class);
+
+        assertThatThrownBy(() -> new WhatsappMessageClaimService(repository, Clock.systemUTC(), "PT0S"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("WHATSAPP_PENDING_TIMEOUT");
+        assertThatThrownBy(() -> new WhatsappMessageClaimService(repository, Clock.systemUTC(), "not-a-duration"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("WHATSAPP_PENDING_TIMEOUT");
+        }
 
     @Test
     void activePendingCannotBeClaimed() {

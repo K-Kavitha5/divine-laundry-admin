@@ -79,6 +79,7 @@ public class AdminWebController {
         model.addAttribute("upiConfigured", upiConfigured);
         model.addAttribute("whatsappImageConfigured", whatsappProperties.isConfigured());
         model.addAttribute("whatsappDocumentConfigured", whatsappProperties.isDocumentConfigured());
+        model.addAttribute("whatsappConfigurationState", whatsappProperties.configurationState());
     }
 
     @GetMapping("/login")

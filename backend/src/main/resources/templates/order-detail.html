@@ -16,7 +16,7 @@
 <label>Transaction reference (optional)<input th:field="*{reference}" maxlength="120"></label>
 <p>Check your bank/app before recording a UPI payment. A QR scan is not proof of payment.</p>
 <button type="submit" th:disabled="${summary.balance.signum() le 0}">Record payment</button></form>
-<section class="card"><h2>WhatsApp &amp; payment QR</h2><p>Invoice message state: <b th:text="${whatsappState}"></b></p>
+<section class="card"><h2>WhatsApp &amp; payment QR</h2><p>WhatsApp: <b th:text="${whatsappConfigurationState == 'DISABLED' ? 'Disabled' : whatsappConfigurationState == 'ENABLED_CONFIGURED' ? 'Enabled' : 'Configuration incomplete'}"></b></p><p>Invoice message state: <b th:text="${whatsappState}"></b></p>
 <p>Demo mode does not send messages. Live sending requires Meta setup and customer opt-in before enabling automation.</p>
 <p>SENT means accepted by Meta, not confirmed delivered. Delivery tracking is not part of this milestone.</p>
 <p th:unless="${upiConfigured}">UPI ID is not configured. The invoice image will say payment QR is unavailable.</p>

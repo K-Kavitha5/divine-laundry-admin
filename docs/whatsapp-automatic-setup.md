@@ -55,6 +55,7 @@ WHATSAPP_PHONE_NUMBER_ID=meta-phone-number-id
 WHATSAPP_ACCESS_TOKEN=production-system-user-token
 WHATSAPP_TEMPLATE_NAME=laundry_invoice_payment
 WHATSAPP_TEMPLATE_LANGUAGE=en
+WHATSAPP_PENDING_TIMEOUT=PT15M
 ```
 
 Keep `WHATSAPP_ENABLED=false` until the template, phone number, access token and UPI ID have all been verified.

@@ -3,6 +3,7 @@ package com.divinelaundry.service;
 import com.divinelaundry.domain.WhatsappMessage;
 import com.divinelaundry.repository.WhatsappMessageRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,13 +18,20 @@ public class WhatsappMessageClaimService {
     private final Clock clock;
     private final Duration pendingTimeout;
 
+    @Autowired
     public WhatsappMessageClaimService(
             WhatsappMessageRepository messages,
             Clock clock,
-            @Value("${app.whatsapp.pending-timeout:PT15M}") Duration pendingTimeout) {
+            @Value("${app.whatsapp.pending-timeout:PT15M}") String pendingTimeout) {
         this.messages = messages;
         this.clock = clock;
-        this.pendingTimeout = pendingTimeout;
+        this.pendingTimeout = parsePendingTimeout(pendingTimeout);
+    }
+
+    WhatsappMessageClaimService(WhatsappMessageRepository messages, Clock clock, Duration pendingTimeout) {
+        this.messages = messages;
+        this.clock = clock;
+        this.pendingTimeout = parsePendingTimeout(pendingTimeout == null ? null : pendingTimeout.toString());
     }
 
     @Transactional
@@ -34,5 +42,15 @@ public class WhatsappMessageClaimService {
             return Optional.empty();
         }
         return messages.findByDeduplicationKey(deduplicationKey);
+    }
+
+    private static Duration parsePendingTimeout(String value) {
+        try {
+            Duration parsed = Duration.parse(value == null ? "" : value.trim());
+            if (parsed.isZero() || parsed.isNegative()) throw new IllegalArgumentException();
+            return parsed;
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException("WHATSAPP_PENDING_TIMEOUT must be a positive ISO-8601 duration", error);
+        }
     }
 }

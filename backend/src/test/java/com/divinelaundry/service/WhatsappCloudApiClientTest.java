@@ -21,6 +21,17 @@ class WhatsappCloudApiClientTest {
             new WhatsappCloudApiClient.TemplateValues("Test Customer", "INV-1", "SO-1",
                     new BigDecimal("240.00"), BigDecimal.ZERO, new BigDecimal("240.00"));
 
+                @Test
+                void rejectsInvalidIndianLocalPhoneNumbers() {
+                org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    WhatsappCloudApiClient.normalizeIndianPhone("5123456789"))
+                    .isInstanceOf(IllegalArgumentException.class);
+                assertThat(WhatsappCloudApiClient.normalizeIndianPhone("09876543210"))
+                    .isEqualTo("919876543210");
+                assertThat(WhatsappCloudApiClient.normalizeIndianPhone("+91 9876543210"))
+                    .isEqualTo("919876543210");
+                }
+
     @Test
     void classifiesProviderHttpFailuresWithoutPersistingResponseBodies() throws Exception {
         for (int status : new int[]{401, 403, 429, 400, 422, 500, 502, 503}) {
