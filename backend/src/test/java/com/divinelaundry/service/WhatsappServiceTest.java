@@ -167,6 +167,30 @@ class WhatsappServiceTest {
         verify(provider, times(2)).sendInvoiceAndPaymentDocument(anyString(), any(), anyString(), any());
     }
 
+    @Test
+    void retryRejectsTerminalAndPendingMessages() {
+        WhatsappMessageRepository messages = mock(WhatsappMessageRepository.class);
+        LaundryOrder order = invoicedOrder("retry-state", "INV-2026-000005");
+        WhatsappMessage sent = new WhatsappMessage("INVOICE_IMAGE:INV-2026-000005", order,
+                "9876543210", "template");
+        sent.markPending();
+        sent.markSent("media", "wamid");
+        WhatsappMessage pending = new WhatsappMessage("INVOICE_PDF:INV-2026-000005", order,
+                "9876543210", "template", "DOCUMENT");
+        pending.markPending();
+        when(messages.findByIdAndOrder_OrderNumber(1L, order.getOrderNumber())).thenReturn(Optional.of(sent));
+        when(messages.findByIdAndOrder_OrderNumber(2L, order.getOrderNumber())).thenReturn(Optional.of(pending));
+        WhatsappService service = new WhatsappService(messages, mock(LaundryOrderRepository.class),
+                mock(DocumentService.class), mock(InvoicePaymentImageService.class), mock(PdfInvoiceService.class),
+                mock(PaymentReceiptService.class), mock(PdfReceiptService.class), mock(WhatsappCloudApiClient.class),
+                properties(), mock(WhatsappMessageClaimService.class));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.retry(order.getOrderNumber(), 1L))
+                .isInstanceOf(IllegalStateException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.retry(order.getOrderNumber(), 2L))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
         private static LaundryOrder invoicedOrder(String requestId, String invoiceNumber) {
                 LaundryOrder order = new LaundryOrder(requestId, new Customer("Customer", "9876543210", null, "Trichy"),
                                 null, null, "admin");

@@ -101,6 +101,11 @@ public class AdminWebController {
             paymentRows.sumBetween(start, end, OrderStatus.CANCELLED),
             orders.countByPickupAtBetweenAndWorkStatusIn(start, end, OPEN),
             orders.countByDeliveryAtBetweenAndWorkStatusIn(start, end, OPEN)));
+        model.addAttribute("whatsapp", new WhatsappMetrics(
+            messages.countByDeliveryStatus(WhatsappDeliveryStatus.PENDING),
+            messages.countByDeliveryStatus(WhatsappDeliveryStatus.FAILED),
+            messages.countByDeliveryStatus(WhatsappDeliveryStatus.SENT),
+            messages.countByDeliveryStatus(WhatsappDeliveryStatus.DELIVERED)));
         return "dashboard";
     }
 
@@ -235,6 +240,8 @@ public class AdminWebController {
             .filter(item -> !item.isNoPrint()).mapToInt(OrderItem::getPieceCount).sum());
         model.addAttribute("tags", tags);
         model.addAttribute("statusHistory", statusHistory.findByOrder_OrderNumberOrderByChangedAtAsc(number));
+        model.addAttribute("whatsappMessages", messages.findByOrder_OrderNumberOrderByCreatedAtDesc(number).stream()
+            .map(AdminWebController::whatsappMessageView).toList());
         model.addAttribute("nextStatuses", Arrays.stream(OrderStatus.values())
             .filter(next -> OrderStatus.isValidTransition(summary.order().getWorkStatus(), next)).toList());
         model.addAttribute("modes", PaymentMode.values());
@@ -242,6 +249,17 @@ public class AdminWebController {
                 .findByDeduplicationKey("INVOICE_IMAGE:" + summary.order().getInvoiceNumber())
                 .map(message -> message.getDeliveryStatus().name()).orElse("NOT_QUEUED");
         model.addAttribute("whatsappState", state);
+    }
+
+    @PostMapping("/orders/{number}/whatsapp/{messageId}/retry")
+    String retryWhatsapp(@PathVariable String number, @PathVariable Long messageId, RedirectAttributes redirect) {
+        try {
+            whatsapp.retry(number, messageId);
+            redirect.addFlashAttribute("success", "WhatsApp message retry completed.");
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/orders/" + number;
     }
 
     @PostMapping("/orders/{number}/status")
@@ -289,6 +307,29 @@ public class AdminWebController {
     record DashboardMetrics(long todayOrders, long pendingOrders, long readyOrders, long deliveredOrders,
             java.math.BigDecimal outstanding, java.math.BigDecimal todayCollections,
             long pickupDueToday, long deliveryDueToday) {}
+
+    record WhatsappMetrics(long pending, long failed, long sent, long delivered) {}
+
+    record WhatsappMessageView(Long id, String type, String recipientPhone, String status,
+            String failureClassification, int attemptCount, Instant createdAt, Instant sentAt,
+            Instant claimedAt, String providerMessageId, boolean retryable) {}
+
+    private static WhatsappMessageView whatsappMessageView(WhatsappMessage message) {
+        String key = message.getDeduplicationKey();
+        String type = key.startsWith("INVOICE_IMAGE:") ? "Invoice Image"
+            : key.startsWith("INVOICE_PDF:") ? "Invoice PDF"
+            : key.startsWith("RECEIPT_PDF:") ? "Payment Receipt PDF" : "WhatsApp Message";
+        return new WhatsappMessageView(message.getId(), type, maskPhone(message.getRecipientPhone()),
+            message.getDeliveryStatus().name(), message.getDeliveryStatus() == WhatsappDeliveryStatus.FAILED
+                ? message.getLastError() : null, message.getAttemptCount(), message.getCreatedAt(),
+            message.getSentAt(), message.getClaimedAt(), message.getProviderMessageId(),
+            message.getDeliveryStatus() == WhatsappDeliveryStatus.FAILED);
+    }
+
+    private static String maskPhone(String phone) {
+        if (phone == null || phone.length() <= 4) return "****";
+        return "******" + phone.substring(phone.length() - 4);
+    }
 
     @PostMapping("/orders/{number}/payments")
     String pay(@PathVariable String number, @Valid @ModelAttribute PaymentForm paymentForm,

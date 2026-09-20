@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Optional;
 
 @Service
 public class WhatsappService {
@@ -86,6 +87,19 @@ public class WhatsappService {
             new WhatsappCloudApiClient.TemplateValues(
                 order.getCustomer().getName(), order.getInvoiceNumber(), order.getOrderNumber(),
                 order.getTotal(), document.paymentSummary().amountPaid(), document.paymentSummary().balance()));
+    }
+
+    public WhatsappMessage retry(String orderNumber, Long messageId) {
+        WhatsappMessage message = messages.findByIdAndOrder_OrderNumber(messageId, orderNumber)
+                .orElseThrow(() -> new IllegalArgumentException("WhatsApp message not found for this order"));
+        if (message.getDeliveryStatus() != com.divinelaundry.domain.WhatsappDeliveryStatus.FAILED) {
+            throw new IllegalStateException("Only failed WhatsApp messages can be retried");
+        }
+        String key = message.getDeduplicationKey();
+        if (key.startsWith("INVOICE_IMAGE:")) return queueInvoice(orderNumber);
+        if (key.startsWith("INVOICE_PDF:")) return queueInvoicePdf(orderNumber);
+        if (key.startsWith("RECEIPT_PDF:")) return sendPaymentUpdate(orderNumber, key.substring("RECEIPT_PDF:".length()));
+        throw new IllegalStateException("Unsupported WhatsApp message type");
     }
 
     private WhatsappMessage deliver(LaundryOrder order, String deduplicationKey) {

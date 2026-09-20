@@ -44,6 +44,15 @@ class AdminWebFlowTest {
         mvc.perform(post("/logout").session(session).with(csrf())).andExpect(redirectedUrl("/login?logout"));
     }
 
+    @Test void whatsappRetryRequiresAdminAndCsrf() throws Exception {
+        mvc.perform(post("/orders/unknown/whatsapp/1/retry"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/orders/unknown/whatsapp/1/retry").with(user("staff")))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/orders/unknown/whatsapp/1/retry").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isForbidden());
+    }
+
     @Test void customerOrderInvoiceAndPaymentFlowUsesDatabase() throws Exception {
         String phone = "9" + String.format("%09d", Math.floorMod(UUID.randomUUID().getLeastSignificantBits(), 1000000000L));
         long customersBefore = customers.count();

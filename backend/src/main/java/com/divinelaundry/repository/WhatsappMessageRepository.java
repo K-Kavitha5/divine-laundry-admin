@@ -8,10 +8,19 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 import java.time.Instant;
+import java.util.List;
 
 public interface WhatsappMessageRepository extends JpaRepository<WhatsappMessage, Long> {
     @EntityGraph(attributePaths = {"order", "order.customer"})
     Optional<WhatsappMessage> findByDeduplicationKey(String deduplicationKey);
+
+    @EntityGraph(attributePaths = {"order", "order.customer"})
+    List<WhatsappMessage> findByOrder_OrderNumberOrderByCreatedAtDesc(String orderNumber);
+
+    @EntityGraph(attributePaths = {"order", "order.customer"})
+    Optional<WhatsappMessage> findByIdAndOrder_OrderNumber(Long id, String orderNumber);
+
+    long countByDeliveryStatus(com.divinelaundry.domain.WhatsappDeliveryStatus deliveryStatus);
 
         @Modifying
         @Query(value = """
