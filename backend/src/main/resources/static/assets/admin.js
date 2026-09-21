@@ -295,3 +295,54 @@ if (orderForm) {
   renderCatalog();
   recalculate();
 }
+
+const servicesRows = document.getElementById('services-rows');
+if (servicesRows) {
+  const rows = [...servicesRows.querySelectorAll('.service-row')];
+  const search = document.getElementById('services-search');
+  const clear = document.getElementById('services-clear');
+  const emptyClear = document.getElementById('services-empty-clear');
+  const empty = document.getElementById('services-empty');
+  const count = document.getElementById('services-visible-count');
+  const tabs = document.getElementById('services-category-tabs');
+  let category = 'All';
+  const categories = ['All', ...new Set(rows.map(row => row.dataset.serviceCategory).filter(Boolean))];
+  const apply = () => {
+    const query = search.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(row => {
+      const text = `${row.dataset.serviceName} ${row.dataset.serviceCode} ${row.dataset.serviceCategory} ${row.dataset.serviceGroup}`.toLowerCase();
+      const show = (category === 'All' || row.dataset.serviceCategory === category) && (!query || text.includes(query));
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    count.textContent = visible;
+    empty.hidden = visible !== 0;
+    clear.hidden = !query && category === 'All';
+    document.getElementById('services-filter-note').textContent = category === 'All' ? 'Active services only' : `${category} services`;
+  };
+  categories.forEach(item => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'services-category-tab';
+    button.dataset.category = item;
+    button.setAttribute('aria-pressed', String(item === category));
+    button.textContent = item;
+    button.addEventListener('click', () => {
+      category = item;
+      tabs.querySelectorAll('button').forEach(tab => {
+        const active = tab.dataset.category === category;
+        tab.classList.toggle('is-active', active);
+        tab.setAttribute('aria-pressed', String(active));
+      });
+      apply();
+    });
+    tabs.append(button);
+  });
+  tabs.firstElementChild.classList.add('is-active');
+  const reset = () => { search.value = ''; category = 'All'; tabs.querySelectorAll('button').forEach(tab => { const active = tab.dataset.category === 'All'; tab.classList.toggle('is-active', active); tab.setAttribute('aria-pressed', String(active)); }); apply(); };
+  search.addEventListener('input', apply);
+  clear.addEventListener('click', reset);
+  emptyClear.addEventListener('click', reset);
+  apply();
+}
