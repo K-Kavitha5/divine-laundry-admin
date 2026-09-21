@@ -57,6 +57,10 @@ window.addEventListener('pageshow', () => {
 const orderForm = document.getElementById('order-form');
 if (orderForm) {
   const body = document.getElementById('line-items');
+  orderForm.addEventListener('submit', () => {
+    const label = orderForm.querySelector('[data-order-submit-label]');
+    if (label) label.textContent = 'Creating order...';
+  });
   const format = value => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value);
   const imageByCode = {
     SHIRT_DRY: 'shirt.svg', TSHIRT_DRY_M: 'tshirt.svg', TSHIRT_DRY_W: 'tshirt.svg', TSHIRT_DRY_K: 'tshirt.svg',
@@ -99,6 +103,8 @@ if (orderForm) {
   const dryCatalog = document.getElementById('dry-service-catalog');
   const directCatalog = document.getElementById('direct-service-catalog');
   const search = document.getElementById('service-search');
+  const customerSearch = document.getElementById('customer-search');
+  const customerSelect = orderForm.elements.customerId;
   const catalogCount = document.getElementById('catalog-count');
   const catalogEmpty = document.getElementById('catalog-empty');
   let selectedCategory = 'Dry Clean';
@@ -120,7 +126,7 @@ if (orderForm) {
       let groupVisible = 0;
       group.querySelectorAll('.service-card').forEach(card => {
         const matchesGroup = selectedGroup === 'All' || card.dataset.serviceGroup === selectedGroup;
-        const text = `${card.dataset.serviceName} ${card.dataset.serviceGroup || ''} ${card.dataset.serviceCategory}`.toLowerCase();
+        const text = `${card.dataset.serviceName} ${card.dataset.serviceCode || ''} ${card.dataset.serviceGroup || ''} ${card.dataset.serviceCategory}`.toLowerCase();
         const matchesSearch = !query || text.includes(query);
         const show = matchesGroup && matchesSearch;
         card.hidden = !show;
@@ -129,7 +135,7 @@ if (orderForm) {
       group.hidden = groupVisible === 0;
     });
     directCatalog.querySelectorAll('.service-card').forEach(card => {
-      const text = `${card.dataset.serviceName} ${card.dataset.serviceCategory}`.toLowerCase();
+      const text = `${card.dataset.serviceName} ${card.dataset.serviceCode || ''} ${card.dataset.serviceCategory}`.toLowerCase();
       const show = card.dataset.serviceCategory === selectedCategory && (!query || text.includes(query));
       card.hidden = !show;
       if (show) visible += 1;
@@ -148,7 +154,7 @@ if (orderForm) {
     const option = select?.selectedOptions[0];
     const name = option?.dataset.name || '';
     row.querySelector('[data-line-name]').textContent = name || 'Select a service';
-    row.querySelector('[data-line-meta]').textContent = name ? `${option.dataset.category} · ₹${option.dataset.rate} / ${option.dataset.unit}` : 'Choose from the service menu';
+    row.querySelector('[data-line-meta]').textContent = name ? `${option.dataset.code} · ${option.dataset.category} · ₹${option.dataset.rate} / ${option.dataset.unit}` : 'Choose from the service menu';
     const fallback = '/assets/service-images/default-laundry.svg';
     const lineImage = row.querySelector('[data-line-image]');
     lineImage.onerror = () => { lineImage.onerror = null; lineImage.src = fallback; };
@@ -219,6 +225,20 @@ if (orderForm) {
     row.querySelector('[data-pieces]').value = '1';
     body.append(row); reindex(); syncLine(row); return row;
   };
+  const updateStepper = button => {
+    const row = button.closest('.order-line');
+    const input = row?.querySelector(`[data-${button.dataset.target}]`);
+    if (!input) return;
+    const min = Number(input.min) || 0;
+    const max = Number(input.max) || Number.MAX_SAFE_INTEGER;
+    const selectedUnit = row.querySelector('[data-service]')?.selectedOptions[0]?.dataset.unit;
+    const step = button.dataset.target === 'quantity' && selectedUnit === 'PIECE'
+      ? 1 : Number(input.step) || 1;
+    const current = Number(input.value) || min;
+    const next = button.dataset.step === 'up' ? current + step : current - step;
+    input.value = String(Math.min(max, Math.max(min, Number(next.toFixed(3)))));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
   document.querySelectorAll('.service-card').forEach(card => card.addEventListener('click', () => selectService(card)));
   document.querySelectorAll('.primary-service').forEach(button => button.addEventListener('click', () => {
     selectedCategory = button.dataset.topCategory;
@@ -238,8 +258,32 @@ if (orderForm) {
     addLine(); recalculate();
   });
   body.addEventListener('click', event => {
+    const stepper = event.target.closest('[data-step]');
+    if (stepper) { updateStepper(stepper); return; }
     const button = event.target.closest('.remove-line');
-    if (button && body.children.length > 1) { button.closest('.order-line').remove(); reindex(); recalculate(); }
+    if (!button) return;
+    if (body.children.length > 1) {
+      button.closest('.order-line').remove();
+    } else {
+      const row = button.closest('.order-line');
+      row.querySelector('[data-service]').value = '';
+      row.querySelector('[data-quantity]').value = '1';
+      row.querySelector('[data-pieces]').value = '1';
+    }
+    reindex();
+    recalculate();
+  });
+  customerSearch?.addEventListener('input', () => {
+    const query = customerSearch.value.trim().toLowerCase();
+    [...customerSelect.options].forEach(option => {
+      if (!option.value) return;
+      option.hidden = query.length > 0 && !(option.dataset.customerSearch || option.textContent).toLowerCase().includes(query);
+    });
+    if (customerSelect.selectedOptions[0]?.hidden) customerSelect.value = '';
+  });
+  customerSelect?.addEventListener('change', () => {
+    const selected = customerSelect.selectedOptions[0];
+    if (selected && customerSearch) customerSearch.value = selected.textContent.trim();
   });
   orderForm.addEventListener('input', recalculate);
   orderForm.addEventListener('change', recalculate);
