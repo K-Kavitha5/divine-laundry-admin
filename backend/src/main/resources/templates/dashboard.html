@@ -16,7 +16,7 @@
 			<a th:href="@{/orders/new}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>New order</span><span class="dashboard-nav-badge">+</span></a>
 			<a th:href="@{/customers}"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 6.5a3 3 0 0 1 0 5.8M16 15a5 5 0 0 1 4.5 4"></path></svg><span>Customers</span></a>
 			<p class="dashboard-nav-label dashboard-nav-label-spaced">MANAGE</p>
-			<a th:href="@{/services}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h5"></path></svg><span>Services &amp; pricing</span></a>
+			<a th:href="@{/services}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h5"></path></svg><span>Services &amp; pricing</span></a><a th:href="@{/reports}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-7M3 19h18"></path></svg><span>Reports</span></a>
 		</nav>
 		<div class="dashboard-sidebar-footer"><div class="dashboard-user"><span class="dashboard-user-mark" aria-hidden="true">A</span><span><strong>Admin account</strong><small>Private workspace</small></span></div><form th:action="@{/logout}" method="post"><button class="dashboard-logout" type="submit"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 5H5v14h5M14 8l4 4-4 4M9 12h9"></path></svg><span>Sign out</span></button></form></div>
 	</aside>
