@@ -32,6 +32,19 @@ if (loginForm) {
     submit.querySelector('[data-submit-label]').textContent = 'Signing in...';
   });
 }
+const dashboardMenu = document.querySelector('[data-dashboard-menu]');
+const dashboardClose = document.querySelector('[data-dashboard-close]');
+const dashboardScrim = document.querySelector('[data-dashboard-scrim]');
+const dashboardSidebar = document.getElementById('dashboard-navigation');
+const setDashboardNavigation = open => {
+  if (!dashboardSidebar || !dashboardMenu) return;
+  dashboardSidebar.classList.toggle('is-open', open);
+  dashboardScrim?.classList.toggle('is-visible', open);
+  dashboardMenu.setAttribute('aria-expanded', String(open));
+};
+dashboardMenu?.addEventListener('click', () => setDashboardNavigation(true));
+dashboardClose?.addEventListener('click', () => setDashboardNavigation(false));
+dashboardScrim?.addEventListener('click', () => setDashboardNavigation(false));
 // Restore submission controls after browser Back/bfcache without changing request IDs.
 window.addEventListener('pageshow', () => {
   document.querySelectorAll('[data-lock-submit]').forEach(form => {
