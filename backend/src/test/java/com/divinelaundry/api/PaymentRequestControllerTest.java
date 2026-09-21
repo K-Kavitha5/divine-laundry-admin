@@ -75,6 +75,26 @@ class PaymentRequestControllerTest {
                 .andExpect(jsonPath("$.provider").value("mock-local"));
     }
 
+    @Test
+    void createPaymentRequestRequiresAdminAuthAndCsrf() throws Exception {
+        mockMvc.perform(post("/api/orders/SO-2026-000101/payment-requests")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":1000.00,\"idempotencyKey\":\"req-no-auth\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/orders/SO-2026-000101/payment-requests")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("not-admin").roles("USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":1000.00,\"idempotencyKey\":\"req-no-role\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/orders/SO-2026-000101/payment-requests")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":1000.00,\"idempotencyKey\":\"req-no-csrf\"}"))
+                .andExpect(status().isForbidden());
+    }
+
     static final class MockPaymentProviderTestOrderFactory {
         static com.divinelaundry.domain.LaundryOrder order(String orderNumber) {
             com.divinelaundry.domain.Customer customer = new com.divinelaundry.domain.Customer("Test Customer", "9876543210", null, "Trichy");

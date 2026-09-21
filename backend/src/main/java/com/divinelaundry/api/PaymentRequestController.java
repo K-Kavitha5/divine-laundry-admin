@@ -3,6 +3,7 @@ package com.divinelaundry.api;
 import com.divinelaundry.domain.PaymentRequest;
 import com.divinelaundry.service.PaymentRequestService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
@@ -23,6 +24,7 @@ public class PaymentRequestController {
         this.paymentRequestService = paymentRequestService;
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{orderNumber}/payment-requests")
     public PaymentRequestResponse create(
             @PathVariable String orderNumber,
@@ -36,6 +38,7 @@ public class PaymentRequestController {
                 request.idempotencyKey()));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{orderNumber}/payment-requests")
     public List<PaymentRequestResponse> list(@PathVariable String orderNumber) {
         return paymentRequestService.findByOrderNumber(orderNumber).stream()

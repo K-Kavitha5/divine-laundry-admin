@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class PaymentRequestServiceTest {
@@ -237,6 +238,7 @@ class PaymentRequestServiceTest {
         PaymentRequest request = new PaymentRequest(order, new BigDecimal("1000.00"), "INR", "mock-local", "admin", "req-paid");
         request.markPending("MOCK-REF-1", Instant.now().plusSeconds(600));
         when(requests.findByProviderReference("MOCK-REF-1")).thenReturn(Optional.of(request));
+        when(requests.findByProviderPaymentId("MOCK-PAY-1")).thenReturn(Optional.empty());
         when(provider.verifyPayment("MOCK-REF-1", new BigDecimal("1000.00"), "INR"))
                 .thenReturn(new PaymentProvider.ProviderPaymentResponse(
                         "mock-local", "MOCK-REF-1", "MOCK-PAY-1",
@@ -250,6 +252,85 @@ class PaymentRequestServiceTest {
         assertThat(result.getStatus()).isEqualTo(PaymentRequestStatus.PAID);
         assertThat(result.getProviderPaymentId()).isEqualTo("MOCK-PAY-1");
         verify(paymentService).record(any(PaymentService.RecordPaymentCommand.class));
+    }
+
+    @Test
+    void duplicateConfirmationIsIdempotent() {
+        PaymentRequestRepository requests = mock(PaymentRequestRepository.class);
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        PaymentService paymentService = mock(PaymentService.class);
+        PaymentProvider provider = mock(PaymentProvider.class);
+        PaymentRequestService service = new PaymentRequestService(requests, orders, paymentService, provider);
+
+        LaundryOrder order = order("SO-2026-000011-A", new BigDecimal("1725.00"));
+        PaymentRequest request = new PaymentRequest(order, new BigDecimal("1000.00"), "INR", "mock-local", "admin", "req-paid-again");
+        request.markPending("MOCK-REF-10", Instant.now().plusSeconds(600));
+        request.markPaid("MOCK-PAY-10");
+
+        when(requests.findByProviderReference("MOCK-REF-10")).thenReturn(Optional.of(request));
+
+        PaymentRequest result = service.confirmVerifiedPayment("SO-2026-000011-A", "MOCK-REF-10", new BigDecimal("1000.00"), "INR", "admin");
+
+        assertThat(result).isSameAs(request);
+        assertThat(result.getStatus()).isEqualTo(PaymentRequestStatus.PAID);
+        verify(provider, never()).verifyPayment(anyString(), any(BigDecimal.class), anyString());
+        verify(paymentService, never()).record(any(PaymentService.RecordPaymentCommand.class));
+    }
+
+    @Test
+    void exact1725FlowCompletesToZeroOutstanding() {
+        PaymentRequestRepository requests = mock(PaymentRequestRepository.class);
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        PaymentService paymentService = mock(PaymentService.class);
+        PaymentProvider provider = mock(PaymentProvider.class);
+        PaymentRequestService service = new PaymentRequestService(requests, orders, paymentService, provider);
+
+        LaundryOrder order = order("SO-2026-000015", new BigDecimal("1725.00"));
+        when(orders.findByOrderNumber("SO-2026-000015")).thenReturn(Optional.of(order));
+        when(requests.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
+        when(requests.findByOrderIdAndStatusInOrderByCreatedAtDesc(eq(order.getId()), anyList())).thenReturn(List.of());
+        when(requests.save(any(PaymentRequest.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(provider.createPaymentRequest(any(PaymentProvider.PaymentRequestContext.class)))
+                .thenReturn(
+                        new PaymentProvider.ProviderPaymentResponse("mock-local", "MOCK-REF-1000", null, new BigDecimal("1000.00"), BigDecimal.ZERO, "INR", PaymentRequestStatus.CREATED, null, "mock-local://payment/MOCK-REF-1000", null, Instant.now().plusSeconds(600)),
+                        new PaymentProvider.ProviderPaymentResponse("mock-local", "MOCK-REF-725", null, new BigDecimal("725.00"), BigDecimal.ZERO, "INR", PaymentRequestStatus.CREATED, null, "mock-local://payment/MOCK-REF-725", null, Instant.now().plusSeconds(600)));
+        when(paymentService.summary("SO-2026-000015")).thenReturn(
+                new PaymentService.PaymentSummary(order, BigDecimal.ZERO, new BigDecimal("1725.00"), List.of()),
+                new PaymentService.PaymentSummary(order, new BigDecimal("1000.00"), new BigDecimal("725.00"), List.of()),
+                new PaymentService.PaymentSummary(order, new BigDecimal("1725.00"), BigDecimal.ZERO, List.of()));
+
+        PaymentRequest first = service.createPaymentRequest("SO-2026-000015", new BigDecimal("1000.00"), "admin", "req-1000");
+        assertThat(first.getStatus()).isEqualTo(PaymentRequestStatus.PENDING);
+        assertThat(first.getRequestedAmount()).isEqualByComparingTo("1000.00");
+
+        PaymentRequest firstConfirmed = new PaymentRequest(order, new BigDecimal("1000.00"), "INR", "mock-local", "admin", "req-1000-paid");
+        firstConfirmed.markPending("MOCK-REF-1000", Instant.now().plusSeconds(600));
+        when(requests.findByProviderReference("MOCK-REF-1000")).thenReturn(Optional.of(firstConfirmed));
+        when(provider.verifyPayment("MOCK-REF-1000", new BigDecimal("1000.00"), "INR")).thenReturn(
+                new PaymentProvider.ProviderPaymentResponse("mock-local", "MOCK-REF-1000", "MOCK-PAY-1000", new BigDecimal("1000.00"), new BigDecimal("1000.00"), "INR", PaymentRequestStatus.PAID, null, null, null, Instant.now()));
+        when(paymentService.record(any(PaymentService.RecordPaymentCommand.class))).thenReturn(
+                new PaymentService.PaymentSummary(order, new BigDecimal("1000.00"), new BigDecimal("725.00"), List.of()));
+        PaymentRequest resultOne = service.confirmVerifiedPayment("SO-2026-000015", "MOCK-REF-1000", new BigDecimal("1000.00"), "INR", "admin");
+        assertThat(resultOne.getStatus()).isEqualTo(PaymentRequestStatus.PAID);
+        assertThat(resultOne.getProviderPaymentId()).isEqualTo("MOCK-PAY-1000");
+
+        PaymentRequest second = service.createPaymentRequest("SO-2026-000015", new BigDecimal("725.00"), "admin", "req-725");
+        assertThat(second.getStatus()).isEqualTo(PaymentRequestStatus.PENDING);
+        assertThat(second.getRequestedAmount()).isEqualByComparingTo("725.00");
+
+        PaymentRequest secondConfirmed = new PaymentRequest(order, new BigDecimal("725.00"), "INR", "mock-local", "admin", "req-725-paid");
+        secondConfirmed.markPending("MOCK-REF-725", Instant.now().plusSeconds(600));
+        when(requests.findByProviderReference("MOCK-REF-725")).thenReturn(Optional.of(secondConfirmed));
+        when(provider.verifyPayment("MOCK-REF-725", new BigDecimal("725.00"), "INR")).thenReturn(
+                new PaymentProvider.ProviderPaymentResponse("mock-local", "MOCK-REF-725", "MOCK-PAY-725", new BigDecimal("725.00"), new BigDecimal("725.00"), "INR", PaymentRequestStatus.PAID, null, null, null, Instant.now()));
+        when(paymentService.record(any(PaymentService.RecordPaymentCommand.class))).thenReturn(
+                new PaymentService.PaymentSummary(order, new BigDecimal("1725.00"), BigDecimal.ZERO, List.of()));
+        PaymentRequest resultTwo = service.confirmVerifiedPayment("SO-2026-000015", "MOCK-REF-725", new BigDecimal("725.00"), "INR", "admin");
+        assertThat(resultTwo.getStatus()).isEqualTo(PaymentRequestStatus.PAID);
+        assertThat(resultTwo.getProviderPaymentId()).isEqualTo("MOCK-PAY-725");
+
+        assertThat(resultOne.getRequestedAmount()).isEqualByComparingTo("1000.00");
+        assertThat(resultTwo.getRequestedAmount()).isEqualByComparingTo("725.00");
     }
 
     @Test
