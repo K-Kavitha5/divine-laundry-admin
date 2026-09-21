@@ -9,6 +9,7 @@ document.querySelectorAll('[data-lock-submit]').forEach(form => {
     if (message && !window.confirm(message)) event.preventDefault();
   });
   form.addEventListener('submit', event => {
+    if (event.defaultPrevented) return;
     if (form.dataset.submitting === 'true') { event.preventDefault(); return; }
     form.dataset.submitting = 'true';
     form.querySelectorAll('button[type="submit"]').forEach(button => { button.disabled = true; });
