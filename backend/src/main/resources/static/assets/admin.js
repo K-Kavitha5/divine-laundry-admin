@@ -14,6 +14,24 @@ document.querySelectorAll('[data-lock-submit]').forEach(form => {
     form.querySelectorAll('button[type="submit"]').forEach(button => { button.disabled = true; });
   });
 });
+const passwordToggle = document.querySelector('[data-password-toggle]');
+if (passwordToggle) {
+  passwordToggle.addEventListener('click', () => {
+    const password = document.getElementById(passwordToggle.getAttribute('aria-controls'));
+    const visible = password.type === 'text';
+    password.type = visible ? 'password' : 'text';
+    passwordToggle.textContent = visible ? 'Show' : 'Hide';
+    passwordToggle.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
+  });
+}
+const loginForm = document.querySelector('[data-login-form]');
+if (loginForm) {
+  loginForm.addEventListener('submit', () => {
+    const submit = loginForm.querySelector('[data-login-submit]');
+    submit.disabled = true;
+    submit.querySelector('[data-submit-label]').textContent = 'Signing in...';
+  });
+}
 // Restore submission controls after browser Back/bfcache without changing request IDs.
 window.addEventListener('pageshow', () => {
   document.querySelectorAll('[data-lock-submit]').forEach(form => {
