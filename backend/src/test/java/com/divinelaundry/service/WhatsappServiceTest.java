@@ -39,7 +39,8 @@ class WhatsappServiceTest {
 
         new WhatsappService(messages, orders, mock(DocumentService.class), mock(InvoicePaymentImageService.class),
                 mock(PdfInvoiceService.class), mock(PaymentReceiptService.class), mock(PdfReceiptService.class),
-                provider, properties(), claims).queueInvoice(order.getOrderNumber());
+                provider, properties(), claims, new WhatsappMessagePersistenceService(messages))
+                .queueInvoice(order.getOrderNumber());
 
         verify(claims).claim("INVOICE_IMAGE:INV-2026-000002");
         verify(provider, never()).sendInvoiceAndPaymentImage(anyString(), any(), anyString(), any());
@@ -67,7 +68,7 @@ class WhatsappServiceTest {
 
         new WhatsappService(messages, orders, documents, mock(InvoicePaymentImageService.class), invoices,
                 mock(PaymentReceiptService.class), mock(PdfReceiptService.class), provider,
-                properties(), claims).queueInvoicePdf(order.getOrderNumber());
+                properties(), claims, new WhatsappMessagePersistenceService(messages)).queueInvoicePdf(order.getOrderNumber());
 
         verify(claims).claim("INVOICE_PDF:INV-2026-000003");
         verify(provider, never()).sendInvoiceAndPaymentDocument(anyString(), any(), anyString(), any());
@@ -88,7 +89,7 @@ class WhatsappServiceTest {
                 true, "https://graph.example", "v-test", "phone-id", "secret-token",
                 "image-template", "en", "document-template", "en");
         WhatsappService service = new WhatsappService(messages, orders, documents, images, invoices,
-                receipts, receiptPdfs, provider, properties, claims);
+                receipts, receiptPdfs, provider, properties, claims, new WhatsappMessagePersistenceService(messages));
 
         LaundryOrder order = new LaundryOrder("receipt-send", new Customer("Customer", "9876543210", null, "Trichy"), null, null, "admin");
         order.assignOrderNumber("SO-2026-000001");
@@ -149,6 +150,7 @@ class WhatsappServiceTest {
         when(provider.isDocumentConfigured()).thenReturn(true);
         when(messages.findByDeduplicationKey("RECEIPT_PDF:PAY-4")).thenReturn(Optional.of(message));
         when(messages.save(any(WhatsappMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messages.saveAndFlush(any(WhatsappMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(claims.claim("RECEIPT_PDF:PAY-4")).thenAnswer(invocation -> {
             message.markPending();
             return Optional.of(message);
@@ -159,7 +161,7 @@ class WhatsappServiceTest {
                 .thenReturn(new WhatsappCloudApiClient.DeliveryResult("media-4", "wamid.4"));
         WhatsappService service = new WhatsappService(messages, orders, mock(DocumentService.class),
                 mock(InvoicePaymentImageService.class), mock(PdfInvoiceService.class), receipts, receiptPdfs,
-                provider, properties(), claims);
+                provider, properties(), claims, new WhatsappMessagePersistenceService(messages));
 
         WhatsappMessage failed = service.sendPaymentUpdate(order.getOrderNumber(), "PAY-4");
         assertThat(failed.getDeliveryStatus()).isEqualTo(com.divinelaundry.domain.WhatsappDeliveryStatus.FAILED);
@@ -187,7 +189,7 @@ class WhatsappServiceTest {
         WhatsappService service = new WhatsappService(messages, mock(LaundryOrderRepository.class),
                 mock(DocumentService.class), mock(InvoicePaymentImageService.class), mock(PdfInvoiceService.class),
                 mock(PaymentReceiptService.class), mock(PdfReceiptService.class), mock(WhatsappCloudApiClient.class),
-                properties(), mock(WhatsappMessageClaimService.class));
+                properties(), mock(WhatsappMessageClaimService.class), new WhatsappMessagePersistenceService(messages));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.retry(order.getOrderNumber(), 1L))
                 .isInstanceOf(IllegalStateException.class);
@@ -222,12 +224,13 @@ class WhatsappServiceTest {
         when(provider.sendInvoiceAndPaymentImage(anyString(), any(), anyString(), any()))
                 .thenReturn(new WhatsappCloudApiClient.DeliveryResult("media", "wamid"));
         when(messages.save(any(WhatsappMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messages.saveAndFlush(any(WhatsappMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         WhatsappMessageClaimService configuredClaims = new WhatsappMessageClaimService(
                 messages, Clock.fixed(now, ZoneOffset.UTC), Duration.ofMinutes(5));
         WhatsappService service = new WhatsappService(messages, orders, documents, images,
                 mock(PdfInvoiceService.class), mock(PaymentReceiptService.class), mock(PdfReceiptService.class),
-                provider, properties(), configuredClaims);
+                provider, properties(), configuredClaims, new WhatsappMessagePersistenceService(messages));
 
         WhatsappMessage result = service.queueInvoice(order.getOrderNumber());
 

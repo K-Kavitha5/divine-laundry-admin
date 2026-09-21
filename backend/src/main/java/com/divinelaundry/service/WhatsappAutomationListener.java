@@ -1,5 +1,6 @@
 package com.divinelaundry.service;
 
+import com.divinelaundry.domain.WhatsappMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

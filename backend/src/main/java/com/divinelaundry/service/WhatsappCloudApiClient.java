@@ -4,6 +4,8 @@ import com.divinelaundry.config.WhatsappProviderProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +24,7 @@ import java.util.UUID;
 
 @Component
 public class WhatsappCloudApiClient {
+    private static final Logger log = LoggerFactory.getLogger(WhatsappCloudApiClient.class);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(35);
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private final WhatsappProviderProperties properties;
@@ -169,6 +172,7 @@ public class WhatsappCloudApiClient {
         try {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                logMetaFailureTemporarily(response.statusCode(), response.body());
                 throw new WhatsappProviderException(classificationFor(response.statusCode()),
                         "%s failed with HTTP %d".formatted(operation, response.statusCode()));
             }
@@ -187,6 +191,30 @@ public class WhatsappCloudApiClient {
             throw new WhatsappProviderException(WhatsappFailureClassification.NETWORK_FAILURE,
                     operation + " failed", error);
         }
+    }
+
+    // TEMPORARY LOCAL-ONLY diagnostic: never log the raw provider response or request data.
+    private void logMetaFailureTemporarily(int statusCode, String responseBody) {
+        try {
+            JsonNode error = json.readTree(responseBody == null ? "" : responseBody).path("error");
+            log.warn("TEMP WhatsApp Meta failure: status={}, type={}, code={}, subcode={}, message={}, fbtrace_id={}",
+                    statusCode,
+                    safeDiagnosticValue(error, "type"),
+                    safeDiagnosticValue(error, "code"),
+                    safeDiagnosticValue(error, "error_subcode"),
+                    safeDiagnosticValue(error, "message"),
+                    safeDiagnosticValue(json.readTree(responseBody == null ? "" : responseBody), "fbtrace_id"));
+        } catch (JsonProcessingException | RuntimeException parseFailure) {
+            log.warn("TEMP WhatsApp Meta failure: status={}, type=<unavailable>, code=<unavailable>, "
+                    + "subcode=<unavailable>, message=<unavailable>, fbtrace_id=<unavailable>", statusCode);
+        }
+    }
+
+    private static String safeDiagnosticValue(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        if (value.isMissingNode() || value.isNull()) return "<missing>";
+        String text = value.isValueNode() ? value.asText() : "<unavailable>";
+        return text.isBlank() ? "<blank>" : text;
     }
 
     private static byte[] multipart(String boundary, WhatsAppMedia media) {

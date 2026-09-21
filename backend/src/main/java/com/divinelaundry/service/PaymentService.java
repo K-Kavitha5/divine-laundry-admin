@@ -18,6 +18,7 @@ public class PaymentService {
     private final LaundryOrderRepository orders;
     private final ApplicationEventPublisher events;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public PaymentService(
             PaymentRepository payments,
             LaundryOrderRepository orders,

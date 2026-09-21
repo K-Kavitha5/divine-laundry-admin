@@ -164,7 +164,9 @@ public class OrderService {
         LaundryOrder order = get(orderNumber);
         boolean newlyFinalised = order.getInvoiceNumber() == null;
         order.finalizeInvoice("INV-%d-%06d".formatted(currentYear(), order.getId()));
-        if (newlyFinalised) events.publishEvent(new InvoiceFinalisedEvent(order.getOrderNumber()));
+        if (newlyFinalised) {
+            events.publishEvent(new InvoiceFinalisedEvent(order.getOrderNumber()));
+        }
         return order;
     }
 

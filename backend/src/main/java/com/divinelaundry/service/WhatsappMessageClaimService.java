@@ -5,6 +5,7 @@ import com.divinelaundry.repository.WhatsappMessageRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -34,7 +35,7 @@ public class WhatsappMessageClaimService {
         this.pendingTimeout = parsePendingTimeout(pendingTimeout == null ? null : pendingTimeout.toString());
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<WhatsappMessage> claim(String deduplicationKey) {
         Instant claimedAt = clock.instant();
         Instant staleBefore = claimedAt.minus(pendingTimeout);

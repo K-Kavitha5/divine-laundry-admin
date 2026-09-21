@@ -23,6 +23,7 @@ public class WhatsappService {
     private final WhatsappCloudApiClient provider;
     private final WhatsappProviderProperties properties;
     private final WhatsappMessageClaimService claims;
+    private final WhatsappMessagePersistenceService persistence;
 
     @Autowired
     public WhatsappService(
@@ -35,7 +36,8 @@ public class WhatsappService {
             PdfReceiptService pdfReceipts,
             WhatsappCloudApiClient provider,
             WhatsappProviderProperties properties,
-            WhatsappMessageClaimService claims) {
+            WhatsappMessageClaimService claims,
+            WhatsappMessagePersistenceService persistence) {
         this.messages = messages;
         this.orders = orders;
         this.documents = documents;
@@ -46,6 +48,7 @@ public class WhatsappService {
         this.provider = provider;
         this.properties = properties;
         this.claims = claims;
+        this.persistence = persistence;
     }
 
     public WhatsappMessage queueInvoice(String orderNumber) {
@@ -63,7 +66,7 @@ public class WhatsappService {
                 receipt.orderTotal(), receipt.amountReceived(), receipt.remainingOutstanding()));
         }
 
-        public WhatsappMessage queueInvoicePdf(String orderNumber) {
+    public WhatsappMessage queueInvoicePdf(String orderNumber) {
         LaundryOrder order = requiredInvoicedOrder(orderNumber);
         DocumentService.DocumentBundle document = documents.document(orderNumber);
         return deliverDocument(order, "INVOICE_PDF:" + order.getInvoiceNumber(),
@@ -97,7 +100,7 @@ public class WhatsappService {
 
         if (!provider.isConfigured()) {
             message.waitingForProvider(provider.configurationMessage());
-            return messages.save(message);
+            return persistence.save(message);
         }
 
         java.util.Optional<WhatsappMessage> claimed = claims.claim(deduplicationKey);
@@ -124,7 +127,7 @@ public class WhatsappService {
         } catch (RuntimeException error) {
             message.markFailed(failureDescription(error));
         }
-        return messages.save(message);
+        return persistence.save(message);
     }
 
         private WhatsappMessage deliverDocument(LaundryOrder order, String deduplicationKey,
@@ -136,7 +139,7 @@ public class WhatsappService {
         if (message.isDeliveredOrSent()) return message;
         if (!provider.isDocumentConfigured()) {
             message.waitingForProvider(provider.configurationMessage());
-            return messages.save(message);
+            return persistence.save(message);
         }
         java.util.Optional<WhatsappMessage> claimed = claims.claim(deduplicationKey);
         if (claimed.isEmpty()) {
@@ -151,18 +154,12 @@ public class WhatsappService {
         } catch (RuntimeException error) {
             message.markFailed(failureDescription(error));
         }
-        return messages.save(message);
+        return persistence.save(message);
     }
 
     private WhatsappMessage getOrCreate(String deduplicationKey,
             java.util.function.Supplier<WhatsappMessage> factory) {
-        return messages.findByDeduplicationKey(deduplicationKey).orElseGet(() -> {
-            try {
-                return messages.saveAndFlush(factory.get());
-            } catch (DataIntegrityViolationException duplicate) {
-                return messages.findByDeduplicationKey(deduplicationKey).orElseThrow(() -> duplicate);
-            }
-        });
+        return persistence.createIfAbsent(deduplicationKey, factory);
     }
 
     private static String failureDescription(RuntimeException error) {
