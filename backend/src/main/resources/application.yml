@@ -33,6 +33,13 @@ server:
         same-site: lax
         secure: ${COOKIE_SECURE:false}
 
+razorpay:
+  enabled: ${RAZORPAY_ENABLED:false}
+  base-url: ${RAZORPAY_BASE_URL:https://api.razorpay.com}
+  key-id: ${RAZORPAY_KEY_ID:}
+  key-secret: ${RAZORPAY_KEY_SECRET:}
+  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
+
 app:
   business-zone: ${BUSINESS_ZONE:Asia/Kolkata}
   business:

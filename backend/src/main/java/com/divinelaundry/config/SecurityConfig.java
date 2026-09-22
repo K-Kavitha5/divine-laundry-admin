@@ -29,6 +29,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/login", "/assets/**", "/error", "/api/health").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/webhooks/razorpay").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/orders/*/payment-requests").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/orders/*/payment-requests").hasRole("ADMIN")
                         .anyRequest().hasRole("ADMIN"))

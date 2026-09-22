@@ -1,5 +1,6 @@
 package com.divinelaundry.service;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
@@ -7,6 +8,7 @@ import java.math.BigDecimal;
 
 @Service
 @Profile("!test")
+@ConditionalOnProperty(name = "razorpay.enabled", havingValue = "false", matchIfMissing = true)
 public class ProductionPaymentProvider implements PaymentProvider {
 
     private static final String NOT_CONFIGURED_MESSAGE =
