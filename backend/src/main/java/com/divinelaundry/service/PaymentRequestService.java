@@ -10,6 +10,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -48,13 +49,19 @@ public class PaymentRequestService {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new IllegalArgumentException("Idempotency key is required");
         }
-        Optional<PaymentRequest> duplicateIdempotency = requests.findByIdempotencyKey(idempotencyKey);
-        if (duplicateIdempotency.isPresent()) {
-            return duplicateIdempotency.get();
-        }
 
         LaundryOrder order = orders.findByOrderNumber(orderNumber)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+        Optional<PaymentRequest> duplicateIdempotency = requests.findByIdempotencyKey(idempotencyKey);
+        if (duplicateIdempotency.isPresent()) {
+            PaymentRequest existing = duplicateIdempotency.get();
+            boolean sameRequest = existing.getOrderNumber().equals(orderNumber)
+                    && existing.getRequestedAmount().compareTo(amount) == 0;
+            if (sameRequest) {
+                return existing;
+            }
+            throw new IllegalStateException("Idempotency key already used for a different order or amount");
+        }
         if (order.getWorkStatus() == OrderStatus.CANCELLED) {
             throw new IllegalStateException("A cancelled order cannot receive a payment request");
         }
@@ -70,8 +77,14 @@ public class PaymentRequestService {
 
         PaymentRequest request = inTransaction(() -> {
             Optional<PaymentRequest> duplicateOnSave = requests.findByIdempotencyKey(idempotencyKey);
-            if (duplicateOnSave.isPresent()) {
-                return duplicateOnSave.get();
+                if (duplicateOnSave.isPresent()) {
+                PaymentRequest existing = duplicateOnSave.get();
+                boolean sameRequest = existing.getOrderNumber().equals(orderNumber)
+                        && existing.getRequestedAmount().compareTo(amount) == 0;
+                if (sameRequest) {
+                    return existing;
+                }
+                throw new IllegalStateException("Idempotency key already used for a different order or amount");
             }
 
             List<PaymentRequest> active = requests.findByOrderIdAndStatusInOrderByCreatedAtDesc(
@@ -115,6 +128,8 @@ public class PaymentRequestService {
                     .orElse(request);
             persisted.markPending(providerResponse.providerReference(), providerResponse.expiresAt());
             persisted.setProvider(providerResponse.provider());
+            persisted.setPaymentUrl(providerResponse.paymentUrl());
+            persisted.setQrPayload(providerResponse.qrPayload());
             PaymentRequest saved = requests.save(persisted);
             return saved == null ? persisted : saved;
         });
@@ -162,7 +177,7 @@ public class PaymentRequestService {
         }
         if (verification.providerPaymentId() != null) {
             Optional<PaymentRequest> duplicateProviderPayment = requests.findByProviderPaymentId(verification.providerPaymentId());
-            if (duplicateProviderPayment.isPresent() && !duplicateProviderPayment.get().getId().equals(request.getId())) {
+            if (duplicateProviderPayment.isPresent() && !Objects.equals(duplicateProviderPayment.get().getId(), request.getId())) {
                 throw new IllegalStateException("A payment with this provider payment ID already exists");
             }
         }

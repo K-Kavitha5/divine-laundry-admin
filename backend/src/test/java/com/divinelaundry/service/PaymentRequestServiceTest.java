@@ -207,6 +207,24 @@ class PaymentRequestServiceTest {
     }
 
     @Test
+    void duplicateIdempotencyKeyDifferentAmountIsRejected() {
+        PaymentRequestRepository requests = mock(PaymentRequestRepository.class);
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        PaymentService paymentService = mock(PaymentService.class);
+        PaymentProvider provider = mock(PaymentProvider.class);
+        PaymentRequestService service = new PaymentRequestService(requests, orders, paymentService, provider);
+
+        LaundryOrder order = order("SO-2026-000009-A", new BigDecimal("1725.00"));
+        PaymentRequest existing = new PaymentRequest(order, new BigDecimal("1000.00"), "INR", "mock-local", "admin", "req-dup-amount");
+        when(orders.findByOrderNumber("SO-2026-000009-A")).thenReturn(Optional.of(order));
+        when(requests.findByIdempotencyKey("req-dup-amount")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.createPaymentRequest("SO-2026-000009-A", new BigDecimal("800.00"), "admin", "req-dup-amount"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("different order or amount");
+    }
+
+    @Test
     void duplicateActiveIdenticalRequestRejected() {
         PaymentRequestRepository requests = mock(PaymentRequestRepository.class);
         LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
@@ -366,6 +384,34 @@ class PaymentRequestServiceTest {
     }
 
     @Test
+    void duplicateProviderPaymentIdIsRejected() {
+        PaymentRequestRepository requests = mock(PaymentRequestRepository.class);
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        PaymentService paymentService = mock(PaymentService.class);
+        PaymentProvider provider = mock(PaymentProvider.class);
+        PaymentRequestService service = new PaymentRequestService(requests, orders, paymentService, provider);
+
+        LaundryOrder order = order("SO-2026-000014", new BigDecimal("100.00"));
+        PaymentRequest existing = new PaymentRequest(order, new BigDecimal("80.00"), "INR", "mock-local", "admin", "req-existing-dupe");
+        existing.markPending("MOCK-REF-EXISTING", Instant.now().plusSeconds(600));
+        existing.markPaid("MOCK-PAY-DUPLICATE");
+        setEntityId(existing, 42L);
+
+        PaymentRequest request = new PaymentRequest(order, new BigDecimal("80.00"), "INR", "mock-local", "admin", "req-new-dupe");
+        request.markPending("MOCK-REF-NEW", Instant.now().plusSeconds(600));
+        setEntityId(request, 43L);
+        when(requests.findByProviderReference("MOCK-REF-NEW")).thenReturn(Optional.of(request));
+        when(requests.findByProviderPaymentId("MOCK-PAY-DUPLICATE")).thenReturn(Optional.of(existing));
+        when(provider.verifyPayment("MOCK-REF-NEW", new BigDecimal("80.00"), "INR"))
+                .thenReturn(new PaymentProvider.ProviderPaymentResponse("mock-local", "MOCK-REF-NEW", "MOCK-PAY-DUPLICATE",
+                        new BigDecimal("80.00"), new BigDecimal("80.00"), "INR", PaymentRequestStatus.PAID, null, null, null, Instant.now()));
+
+        assertThatThrownBy(() -> service.confirmVerifiedPayment("SO-2026-000014", "MOCK-REF-NEW", new BigDecimal("80.00"), "INR", "admin"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already exists");
+    }
+
+    @Test
     void paymentServiceFailureDoesNotMarkRequestPaid() {
         PaymentRequestRepository requests = mock(PaymentRequestRepository.class);
         LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
@@ -395,6 +441,16 @@ class PaymentRequestServiceTest {
         PaymentService paymentService = mock(PaymentService.class);
         PaymentProvider provider = mock(PaymentProvider.class);
         return new PaymentRequestService(requests, orders, paymentService, provider);
+    }
+
+    private static void setEntityId(PaymentRequest request, Long id) {
+        try {
+            java.lang.reflect.Field field = PaymentRequest.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(request, id);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unable to set payment request id for test", e);
+        }
     }
 
     private LaundryOrder order(String orderNumber, BigDecimal total) {

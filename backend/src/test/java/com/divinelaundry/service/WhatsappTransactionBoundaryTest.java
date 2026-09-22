@@ -16,6 +16,7 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -50,6 +51,7 @@ import static org.mockito.Mockito.when;
         "app.whatsapp.document-template-language=en",
         "app.whatsapp.pending-timeout=PT5M"
 })
+@ActiveProfiles("test")
 class WhatsappTransactionBoundaryTest {
     @Autowired private OrderService orderService;
     @Autowired private PaymentService paymentService;

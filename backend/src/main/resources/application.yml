@@ -16,7 +16,10 @@ spring:
         jdbc:
           time_zone: UTC
   flyway:
-    enabled: true
+    enabled: ${FLYWAY_ENABLED:true}
+    url: ${FLYWAY_DB_URL:${DB_URL:jdbc:mysql://localhost:3306/divine_laundry?connectionTimeZone=UTC}}
+    user: ${FLYWAY_DB_USERNAME:${DB_USERNAME:laundry_app}}
+    password: ${FLYWAY_DB_PASSWORD:${DB_PASSWORD}}
 
 server:
   port: ${PORT:8080}

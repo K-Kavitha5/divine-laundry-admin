@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -33,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.whatsapp.enabled=false",
         "app.payment.upi-id="
 })
+@ActiveProfiles("test")
 class PaymentRequestControllerTest {
 
     @Autowired
@@ -61,6 +63,8 @@ class PaymentRequestControllerTest {
                 "admin",
                 "req-1000");
         request.markPending("MOCK-REF-100", Instant.now().plusSeconds(600));
+        request.setPaymentUrl("mock-local://payment/MOCK-REF-100");
+        request.setQrPayload("upi://pay?pa=mock%40divinelaundry&am=1000.00&cu=INR");
 
         when(paymentRequestService.createPaymentRequest(eq("SO-2026-000101"), eq(new BigDecimal("1000.00")), eq("admin"), eq("req-1000")))
                 .thenReturn(request);
@@ -72,7 +76,9 @@ class PaymentRequestControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderNumber").value("SO-2026-000101"))
                 .andExpect(jsonPath("$.status").value("PENDING"))
-                .andExpect(jsonPath("$.provider").value("mock-local"));
+                .andExpect(jsonPath("$.provider").value("mock-local"))
+                .andExpect(jsonPath("$.paymentUrl").value("mock-local://payment/MOCK-REF-100"))
+                .andExpect(jsonPath("$.qrPayload").value(org.hamcrest.Matchers.containsString("upi://pay?")));
     }
 
     @Test

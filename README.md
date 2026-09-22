@@ -127,6 +127,16 @@ The browser keeps the development login only in memory; it is cleared on logout 
 
 See `backend/.env.example` for the MySQL, web-origin, timezone, admin, UPI and WhatsApp settings required for deployment. The default development database is H2 in MySQL compatibility mode. Follow `docs/whatsapp-automatic-setup.md` before enabling automatic sending.
 
+### Database privilege separation
+
+Use a least-privileged runtime account for the application itself and a separate migration account for Flyway.
+
+- `DB_USERNAME` / `DB_PASSWORD`: runtime datasource credentials that the app uses for normal reads/writes.
+- `FLYWAY_ENABLED`: set to `true` when connecting to a MySQL-backed environment that should run Flyway migrations.
+- `FLYWAY_DB_USERNAME` / `FLYWAY_DB_PASSWORD`: migration-only credentials used by Spring Flyway to apply schema changes such as `V8__payment_request_url_and_qr_columns.sql`.
+- In production, the runtime user should not be granted permanent `CREATE`, `ALTER`, `INDEX`, `REFERENCES`, or `DROP` privileges. Those rights belong to the migration account only.
+- Local H2 tests and local development default to Flyway off unless you explicitly enable it, so the app does not try to use MySQL credentials during in-memory test startup.
+
 ## Legacy prices
 
 The database and React sample catalog contain the priced items visible in the previous Fabklean website: 76 active services in total, including 58 Dry Clean services. Items that were visible without a price were not guessed and remain inactive until the client confirms a value.

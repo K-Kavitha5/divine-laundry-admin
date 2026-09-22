@@ -71,8 +71,8 @@ public class PaymentRequestController {
                     request.getRequestedAmount(),
                     request.getCurrency(),
                     request.getStatus().name(),
-                    null,
-                    null,
+                    request.getPaymentUrl(),
+                    request.getQrPayload(),
                     request.getFailureReason(),
                     request.getExpiresAt());
         }

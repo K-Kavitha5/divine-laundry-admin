@@ -40,6 +40,12 @@ public class PaymentRequest {
     @Column(name = "provider_reference", length = 160)
     private String providerReference;
 
+    @Column(name = "payment_url", length = 500)
+    private String paymentUrl;
+
+    @Column(name = "qr_payload", length = 2000)
+    private String qrPayload;
+
     @Column(name = "provider_payment_id", length = 160)
     private String providerPaymentId;
 
@@ -136,6 +142,8 @@ public class PaymentRequest {
     public PaymentRequestStatus getStatus() { return status; }
     public String getProvider() { return provider; }
     public String getProviderReference() { return providerReference; }
+    public String getPaymentUrl() { return paymentUrl; }
+    public String getQrPayload() { return qrPayload; }
     public String getProviderPaymentId() { return providerPaymentId; }
     public Instant getExpiresAt() { return expiresAt; }
     public Instant getCreatedAt() { return createdAt; }
@@ -145,6 +153,8 @@ public class PaymentRequest {
     public String getFailureReason() { return failureReason; }
 
     public void setProviderReference(String providerReference) { this.providerReference = providerReference; }
+    public void setPaymentUrl(String paymentUrl) { this.paymentUrl = paymentUrl; }
+    public void setQrPayload(String qrPayload) { this.qrPayload = qrPayload; }
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
     public void setProviderPaymentId(String providerPaymentId) { this.providerPaymentId = providerPaymentId; }
     public void setOrderNumber(String orderNumber) { this.orderNumber = orderNumber; }
