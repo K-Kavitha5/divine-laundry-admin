@@ -3,6 +3,7 @@ package com.divinelaundry.service;
 import com.divinelaundry.domain.PaymentRequestStatus;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
@@ -39,6 +40,7 @@ public class RazorpayPaymentProvider implements PaymentProvider {
     private final String keySecret;
     private final ObjectMapper objectMapper;
 
+    @Autowired
     public RazorpayPaymentProvider(
             @Value("${razorpay.base-url:https://api.razorpay.com}") String baseUrl,
             @Value("${razorpay.key-id:}") String keyId,
