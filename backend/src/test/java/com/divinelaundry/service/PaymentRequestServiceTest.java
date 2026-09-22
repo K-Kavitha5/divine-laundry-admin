@@ -197,6 +197,7 @@ class PaymentRequestServiceTest {
 
         LaundryOrder order = order("SO-2026-000009", new BigDecimal("1725.00"));
         PaymentRequest existing = new PaymentRequest(order, new BigDecimal("1000.00"), "INR", "mock-local", "admin", "req-dup");
+        existing.markPending("MOCK-REF-EXISTING", Instant.now().plusSeconds(600));
         when(orders.findByOrderNumber("SO-2026-000009")).thenReturn(Optional.of(order));
         when(requests.findByIdempotencyKey("req-dup")).thenReturn(Optional.of(existing));
 
@@ -222,6 +223,61 @@ class PaymentRequestServiceTest {
         assertThatThrownBy(() -> service.createPaymentRequest("SO-2026-000009-A", new BigDecimal("800.00"), "admin", "req-dup-amount"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("different order or amount");
+    }
+
+    @Test
+    void failedProviderCreationIsMarkedFailedAndRetryReusesSameIdempotencyKey() {
+        PaymentRequestRepository requests = mock(PaymentRequestRepository.class);
+        LaundryOrderRepository orders = mock(LaundryOrderRepository.class);
+        PaymentService paymentService = mock(PaymentService.class);
+        PaymentProvider provider = mock(PaymentProvider.class);
+        PaymentRequestService service = new PaymentRequestService(requests, orders, paymentService, provider);
+
+        LaundryOrder order = order("SO-2026-000009-B", new BigDecimal("1725.00"));
+        when(orders.findByOrderNumber("SO-2026-000009-B")).thenReturn(Optional.of(order));
+        when(paymentService.summary("SO-2026-000009-B")).thenReturn(new PaymentService.PaymentSummary(order, BigDecimal.ZERO, new BigDecimal("1725.00"), List.of()));
+        when(requests.findByIdempotencyKey("req-retry")).thenReturn(Optional.empty());
+        when(requests.findByOrderIdAndStatusInOrderByCreatedAtDesc(eq(order.getId()), anyList())).thenReturn(List.of());
+        when(requests.save(any(PaymentRequest.class))).thenAnswer(inv -> {
+            PaymentRequest saved = inv.getArgument(0);
+            setEntityId(saved, 555L);
+            return saved;
+        });
+        when(provider.createPaymentRequest(any(PaymentProvider.PaymentRequestContext.class)))
+                .thenThrow(new IllegalStateException("provider temporarily unavailable"))
+                .thenReturn(new PaymentProvider.ProviderPaymentResponse(
+                        "mock-local",
+                        "MOCK-REF-RETRY",
+                        null,
+                        new BigDecimal("1000.00"),
+                        BigDecimal.ZERO,
+                        "INR",
+                        PaymentRequestStatus.CREATED,
+                        null,
+                        "mock-local://payment/MOCK-REF-RETRY",
+                        null,
+                        Instant.now().plusSeconds(600)
+                ));
+
+        assertThatThrownBy(() -> service.createPaymentRequest("SO-2026-000009-B", new BigDecimal("1000.00"), "admin", "req-retry"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("provider temporarily unavailable");
+
+        ArgumentCaptor<PaymentRequest> failedRequest = ArgumentCaptor.forClass(PaymentRequest.class);
+        verify(requests, atLeastOnce()).save(failedRequest.capture());
+        assertThat(failedRequest.getValue().getStatus()).isEqualTo(PaymentRequestStatus.FAILED);
+        assertThat(failedRequest.getValue().getFailureReason()).isEqualTo("Payment request creation failed");
+
+        PaymentRequest existingFailed = new PaymentRequest(order, new BigDecimal("1000.00"), "INR", "mock-local", "admin", "req-retry");
+        setEntityId(existingFailed, 555L);
+        existingFailed.markFailed("Payment request creation failed");
+        when(requests.findByIdempotencyKey("req-retry")).thenReturn(Optional.of(existingFailed));
+
+        PaymentRequest retried = service.createPaymentRequest("SO-2026-000009-B", new BigDecimal("1000.00"), "admin", "req-retry");
+
+        assertThat(retried.getStatus()).isEqualTo(PaymentRequestStatus.PENDING);
+        assertThat(retried.getProviderReference()).isEqualTo("MOCK-REF-RETRY");
+        verify(provider, times(2)).createPaymentRequest(any(PaymentProvider.PaymentRequestContext.class));
     }
 
     @Test

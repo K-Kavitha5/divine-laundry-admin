@@ -126,6 +126,16 @@ public class PaymentRequest {
         this.expiresAt = Instant.now();
     }
 
+    public void resetForRetry() {
+        this.providerReference = null;
+        this.paymentUrl = null;
+        this.qrPayload = null;
+        this.providerPaymentId = null;
+        this.failureReason = null;
+        this.expiresAt = null;
+        this.status = PaymentRequestStatus.CREATED;
+    }
+
     public void markExpired() {
         this.status = PaymentRequestStatus.EXPIRED;
     }

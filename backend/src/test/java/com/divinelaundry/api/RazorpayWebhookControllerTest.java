@@ -55,7 +55,7 @@ class RazorpayWebhookControllerTest {
     }
 
     @Test
-    void validWebhookMapsReferenceToPaymentRequestAndConfirmsPayment() throws Exception {
+    void validWebhookFromRealPayloadShapeMapsReferenceToPaymentRequestAndConfirmsPayment() throws Exception {
         PaymentRequestService service = Mockito.mock(PaymentRequestService.class);
         PaymentRequestRepository repository = Mockito.mock(PaymentRequestRepository.class);
         RazorpayWebhookController controller = new RazorpayWebhookController(service, repository, new ObjectMapper(), "webhook-secret");
@@ -75,7 +75,7 @@ class RazorpayWebhookControllerTest {
         request.setOrderNumber("SO-2026-000101");
         request.setProviderPaymentId(null);
 
-        String payload = "{\"event\":\"payment_link.paid\",\"payload\":{\"payment_link\":{\"entity\":{\"id\":\"plink_123\",\"reference_id\":\"req-1000\",\"amount\":100000,\"currency\":\"INR\"}},\"payment\":{\"entity\":{\"id\":\"pay_123\",\"amount\":100000,\"currency\":\"INR\",\"status\":\"captured\"}}}}";
+        String payload = "{\"event\":\"payment_link.paid\",\"payload\":{\"order\":{\"entity\":{\"id\":\"order_123\",\"amount\":100000,\"currency\":\"INR\",\"receipt\":\"req-1000\",\"status\":\"paid\"}},\"payment\":{\"entity\":{\"id\":\"pay_123\",\"amount\":100000,\"currency\":\"INR\",\"status\":\"captured\",\"payment_link_id\":\"plink_123\",\"order_id\":\"order_123\"}},\"payment_link\":{\"entity\":{\"id\":\"plink_123\",\"amount\":100000,\"currency\":\"INR\",\"status\":\"paid\"}}}}";
         String signature = RazorpayWebhookController.computeSignature(payload.getBytes(), "webhook-secret");
         when(repository.findByIdempotencyKey("req-1000")).thenReturn(java.util.Optional.of(request));
 

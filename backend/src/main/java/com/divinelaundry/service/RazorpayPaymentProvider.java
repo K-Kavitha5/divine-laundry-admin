@@ -31,7 +31,7 @@ import java.util.Map;
 @Primary
 @ConditionalOnProperty(name = "razorpay.enabled", havingValue = "true")
 public class RazorpayPaymentProvider implements PaymentProvider {
-    private static final long PAYMENT_LINK_EXPIRY_SECONDS = 900L;
+    private static final long PAYMENT_LINK_EXPIRY_SECONDS = 1800L;
     private static final int REFERENCE_ID_MAX_LENGTH = 40;
 
     private final RestTemplate restTemplate;
@@ -68,7 +68,7 @@ public class RazorpayPaymentProvider implements PaymentProvider {
         }
         String referenceId = normalizeReferenceId(StringUtils.hasText(context.idempotencyKey()) ? context.idempotencyKey() : context.orderNumber());
         long amountInPaise = toPaise(context.requestedAmount());
-        Instant expiresAt = Instant.now().plusSeconds(PAYMENT_LINK_EXPIRY_SECONDS);
+        Instant expiresAt = buildExpiryInstant();
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("amount", amountInPaise);
@@ -131,6 +131,7 @@ public class RazorpayPaymentProvider implements PaymentProvider {
         if (amount == null) {
             throw new IllegalArgumentException("Payment amount is required");
         }
+
         JsonNode link = callJson(HttpMethod.GET, "/v1/payment_links/" + providerReference, null);
         String linkId = link.path("id").asText(null);
         if (StringUtils.hasText(linkId) && !providerReference.equals(linkId)) {
@@ -142,39 +143,49 @@ public class RazorpayPaymentProvider implements PaymentProvider {
         if (returnedAmount != expectedPaise) {
             throw new IllegalStateException("Amount mismatch: expected " + amount + " and got " + fromPaise(returnedAmount));
         }
+
+        String paymentLinkStatus = link.path("status").asText(null);
+        if (!"paid".equalsIgnoreCase(paymentLinkStatus)) {
+            throw new IllegalStateException("Payment link status is not paid: " + paymentLinkStatus);
+        }
+
         String returnedCurrency = link.path("currency").asText(null);
         if (!"INR".equalsIgnoreCase(returnedCurrency) || !"INR".equalsIgnoreCase(currency)) {
             throw new IllegalStateException("Currency mismatch for verified Razorpay payment");
         }
 
-        String expectedReference = link.path("reference_id").asText(null);
-        JsonNode capturedPayment = findCapturedPayment(link);
-        if (capturedPayment == null || capturedPayment.isMissingNode() || capturedPayment.isNull()) {
+        String capturedPaymentId = findCapturedPaymentId(link, providerReference);
+        if (!StringUtils.hasText(capturedPaymentId)) {
             throw new IllegalStateException("Razorpay payment is not captured yet");
         }
 
-        long capturedAmount = capturedPayment.path("amount").asLong(-1L);
-        if (capturedAmount != expectedPaise) {
-            throw new IllegalStateException("Captured payment amount mismatch for Razorpay payment link");
-        }
-        String capturedCurrency = capturedPayment.path("currency").asText(null);
-        if (!"INR".equalsIgnoreCase(capturedCurrency) || !"INR".equalsIgnoreCase(returnedCurrency)) {
-            throw new IllegalStateException("Captured payment currency mismatch for Razorpay payment link");
+        JsonNode payment = callJson(HttpMethod.GET, "/v1/payments/" + capturedPaymentId, null);
+        String paymentId = payment.path("id").asText(null);
+        if (!StringUtils.hasText(paymentId) || !capturedPaymentId.equals(paymentId)) {
+            throw new IllegalStateException("Captured payment ID mismatch for Razorpay payment link");
         }
 
-        String capturedLinkReference = capturedPayment.path("reference_id").asText(null);
-        if (StringUtils.hasText(expectedReference) && StringUtils.hasText(capturedLinkReference)
-                && !expectedReference.equals(capturedLinkReference)) {
+        String paymentStatus = payment.path("status").asText(null);
+        boolean isCaptured = "captured".equalsIgnoreCase(paymentStatus) || payment.path("captured").asBoolean(false);
+        if (!isCaptured) {
+            throw new IllegalStateException("Razorpay payment is not captured");
+        }
+
+        long paymentAmount = payment.path("amount").asLong(-1L);
+        if (paymentAmount != expectedPaise) {
+            throw new IllegalStateException("Amount mismatch for captured Razorpay payment");
+        }
+
+        String paymentCurrency = payment.path("currency").asText(null);
+        if (!"INR".equalsIgnoreCase(paymentCurrency)) {
+            throw new IllegalStateException("Currency mismatch for captured Razorpay payment");
+        }
+
+        String expectedReference = link.path("reference_id").asText(null);
+        String paymentReference = payment.path("reference_id").asText(null);
+        if (StringUtils.hasText(expectedReference) && StringUtils.hasText(paymentReference)
+                && !expectedReference.equals(paymentReference)) {
             throw new IllegalStateException("Captured payment reference does not match the expected Razorpay payment link");
-        }
-        String capturedPaymentLinkId = capturedPayment.path("payment_link_id").asText(null);
-        if (StringUtils.hasText(capturedPaymentLinkId) && !providerReference.equals(capturedPaymentLinkId)) {
-            throw new IllegalStateException("Captured payment belongs to a different Razorpay payment link");
-        }
-
-        String paymentId = capturedPayment.path("id").asText(null);
-        if (!StringUtils.hasText(paymentId)) {
-            throw new IllegalStateException("Razorpay captured payment does not include an id");
         }
 
         return new ProviderPaymentResponse(
@@ -182,7 +193,7 @@ public class RazorpayPaymentProvider implements PaymentProvider {
                 providerReference,
                 paymentId,
                 amount,
-                fromPaise(capturedAmount),
+                fromPaise(paymentAmount),
                 "INR",
                 PaymentRequestStatus.PAID,
                 link.path("short_url").asText(null),
@@ -233,6 +244,10 @@ public class RazorpayPaymentProvider implements PaymentProvider {
                 Instant.now());
     }
 
+    private Instant buildExpiryInstant() {
+        return Instant.now().plusSeconds(PAYMENT_LINK_EXPIRY_SECONDS);
+    }
+
     private JsonNode callJson(HttpMethod method, String uri, Map<String, Object> body) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -270,6 +285,41 @@ public class RazorpayPaymentProvider implements PaymentProvider {
             return suffix.substring(0, Math.min(REFERENCE_ID_MAX_LENGTH, suffix.length()));
         }
         return candidate.substring(0, prefixLength) + "-" + suffix;
+    }
+
+    private String findCapturedPaymentId(JsonNode link, String providerReference) {
+        JsonNode payments = link.path("payments");
+        if (payments.isArray()) {
+            for (JsonNode payment : payments) {
+                String status = payment.path("status").asText("");
+                if (!"captured".equalsIgnoreCase(status)) {
+                    continue;
+                }
+                String paymentId = payment.path("payment_id").asText(null);
+                if (!StringUtils.hasText(paymentId)) {
+                    continue;
+                }
+                String plinkId = payment.path("plink_id").asText(null);
+                if (StringUtils.hasText(plinkId) && !providerReference.equals(plinkId)) {
+                    throw new IllegalStateException("Captured payment belongs to a different Razorpay payment link");
+                }
+                return paymentId;
+            }
+        }
+
+        JsonNode payment = link.path("payment").path("entity");
+        if (!payment.isMissingNode() && !payment.isNull()) {
+            String status = payment.path("status").asText("");
+            if ("captured".equalsIgnoreCase(status) || "paid".equalsIgnoreCase(status)) {
+                String paymentId = payment.path("id").asText(null);
+                String plinkId = payment.path("payment_link_id").asText(null);
+                if (StringUtils.hasText(plinkId) && !providerReference.equals(plinkId)) {
+                    throw new IllegalStateException("Captured payment belongs to a different Razorpay payment link");
+                }
+                return paymentId;
+            }
+        }
+        return null;
     }
 
     private JsonNode findCapturedPayment(JsonNode link) {

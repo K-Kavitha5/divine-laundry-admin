@@ -57,10 +57,14 @@ public class PaymentRequestService {
             PaymentRequest existing = duplicateIdempotency.get();
             boolean sameRequest = existing.getOrderNumber().equals(orderNumber)
                     && existing.getRequestedAmount().compareTo(amount) == 0;
-            if (sameRequest) {
-                return existing;
+            if (!sameRequest) {
+                throw new IllegalStateException("Idempotency key already used for a different order or amount");
             }
-            throw new IllegalStateException("Idempotency key already used for a different order or amount");
+            if (isRetryableFailure(existing)) {
+                existing.resetForRetry();
+                return createPaymentRequestWithProvider(order, amount, actor, idempotencyKey, existing);
+            }
+            return existing;
         }
         if (order.getWorkStatus() == OrderStatus.CANCELLED) {
             throw new IllegalStateException("A cancelled order cannot receive a payment request");
@@ -77,7 +81,7 @@ public class PaymentRequestService {
 
         PaymentRequest request = inTransaction(() -> {
             Optional<PaymentRequest> duplicateOnSave = requests.findByIdempotencyKey(idempotencyKey);
-                if (duplicateOnSave.isPresent()) {
+            if (duplicateOnSave.isPresent()) {
                 PaymentRequest existing = duplicateOnSave.get();
                 boolean sameRequest = existing.getOrderNumber().equals(orderNumber)
                         && existing.getRequestedAmount().compareTo(amount) == 0;
@@ -97,42 +101,71 @@ public class PaymentRequestService {
             return requests.save(created);
         });
 
-        PaymentProvider.ProviderPaymentResponse providerResponse = provider.createPaymentRequest(
-                new PaymentProvider.PaymentRequestContext(
-                        order.getOrderNumber(),
-                        order.getInvoiceNumber(),
-                        order.getCustomer().getName(),
-                        amount,
-                        "INR",
-                        actor,
-                        idempotencyKey));
+        return createPaymentRequestWithProvider(order, amount, actor, idempotencyKey, request);
+    }
 
-        if (providerResponse == null) {
-            throw new IllegalStateException("Payment provider returned no response");
-        }
-        if (providerResponse.providerReference() == null || providerResponse.providerReference().isBlank()) {
-            throw new IllegalStateException("Payment provider did not return a request reference");
-        }
-        if (providerResponse.requestedAmount() != null && providerResponse.requestedAmount().compareTo(amount) != 0) {
-            throw new IllegalStateException("Provider amount mismatch for payment request");
-        }
-        if (providerResponse.currency() == null || !providerResponse.currency().equalsIgnoreCase("INR")) {
-            throw new IllegalStateException("Provider currency mismatch for payment request");
-        }
-        if (providerResponse.provider() == null || providerResponse.provider().isBlank()) {
-            throw new IllegalStateException("Payment provider did not identify itself");
-        }
+    private PaymentRequest createPaymentRequestWithProvider(
+            LaundryOrder order,
+            BigDecimal amount,
+            String actor,
+            String idempotencyKey,
+            PaymentRequest request) {
+        try {
+            PaymentProvider.ProviderPaymentResponse providerResponse = provider.createPaymentRequest(
+                    new PaymentProvider.PaymentRequestContext(
+                            order.getOrderNumber(),
+                            order.getInvoiceNumber(),
+                            order.getCustomer().getName(),
+                            amount,
+                            "INR",
+                            actor,
+                            idempotencyKey));
 
-        return inTransaction(() -> {
-            PaymentRequest persisted = requests.findById(request.getId())
-                    .orElse(request);
-            persisted.markPending(providerResponse.providerReference(), providerResponse.expiresAt());
-            persisted.setProvider(providerResponse.provider());
-            persisted.setPaymentUrl(providerResponse.paymentUrl());
-            persisted.setQrPayload(providerResponse.qrPayload());
-            PaymentRequest saved = requests.save(persisted);
-            return saved == null ? persisted : saved;
-        });
+            if (providerResponse == null) {
+                throw new IllegalStateException("Payment provider returned no response");
+            }
+            if (providerResponse.providerReference() == null || providerResponse.providerReference().isBlank()) {
+                throw new IllegalStateException("Payment provider did not return a request reference");
+            }
+            if (providerResponse.requestedAmount() != null && providerResponse.requestedAmount().compareTo(amount) != 0) {
+                throw new IllegalStateException("Provider amount mismatch for payment request");
+            }
+            if (providerResponse.currency() == null || !providerResponse.currency().equalsIgnoreCase("INR")) {
+                throw new IllegalStateException("Provider currency mismatch for payment request");
+            }
+            if (providerResponse.provider() == null || providerResponse.provider().isBlank()) {
+                throw new IllegalStateException("Payment provider did not identify itself");
+            }
+
+            return inTransaction(() -> {
+                PaymentRequest persisted = requests.findById(request.getId())
+                        .orElse(request);
+                persisted.markPending(providerResponse.providerReference(), providerResponse.expiresAt());
+                persisted.setProvider(providerResponse.provider());
+                persisted.setPaymentUrl(providerResponse.paymentUrl());
+                persisted.setQrPayload(providerResponse.qrPayload());
+                PaymentRequest saved = requests.save(persisted);
+                return saved == null ? persisted : saved;
+            });
+        } catch (RuntimeException ex) {
+            inTransaction(() -> {
+                PaymentRequest persisted = requests.findById(request.getId()).orElse(request);
+                persisted.markFailed("Payment request creation failed");
+                persisted.setProviderReference(null);
+                persisted.setPaymentUrl(null);
+                persisted.setQrPayload(null);
+                persisted.setExpiresAt(null);
+                requests.save(persisted);
+                return null;
+            });
+            throw ex;
+        }
+    }
+
+    private boolean isRetryableFailure(PaymentRequest request) {
+        return request.getStatus() == PaymentRequestStatus.FAILED
+                || (request.getStatus() == PaymentRequestStatus.CREATED
+                    && (request.getProviderReference() == null || request.getProviderReference().isBlank()));
     }
 
     public PaymentRequest confirmVerifiedPayment(String orderNumber, String providerReference, BigDecimal amount, String currency, String actor) {

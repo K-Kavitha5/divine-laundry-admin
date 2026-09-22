@@ -11,6 +11,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.http.MediaType;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
@@ -21,7 +25,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:webtests;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
         "spring.datasource.username=sa", "spring.datasource.password=", "app.admin.username=admin",
-        "app.admin.password=TestPassword123!", "app.whatsapp.enabled=false", "app.payment.upi-id="})
+        "app.admin.password=TestPassword123!", "razorpay.webhook-secret=webhook-secret",
+        "app.whatsapp.enabled=false", "app.payment.upi-id="})
 @ActiveProfiles("test")
 class AdminWebFlowTest {
     @Autowired WebApplicationContext context;
@@ -53,6 +58,42 @@ class AdminWebFlowTest {
                 .andExpect(status().isForbidden());
         mvc.perform(post("/orders/unknown/whatsapp/1/retry").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test void razorpayWebhookBypassesCsrfButStillValidatesSignature() throws Exception {
+        String payload = "{\"event\":\"payment_link.paid\",\"payload\":{\"order\":{\"entity\":{\"id\":\"order_123\",\"amount\":10000,\"currency\":\"INR\",\"receipt\":\"rzp-test-SO-2026-000009-1000\",\"status\":\"paid\"}},\"payment\":{\"entity\":{\"id\":\"pay_123\",\"status\":\"paid\",\"amount\":10000,\"currency\":\"INR\",\"payment_link_id\":\"plink_123\",\"order_id\":\"order_123\"}},\"payment_link\":{\"entity\":{\"id\":\"plink_123\",\"amount\":10000,\"currency\":\"INR\",\"status\":\"paid\"}}}}";
+        String validSignature = hmacSha256(payload, "webhook-secret");
+
+        mvc.perform(post("/api/webhooks/razorpay")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload)
+                        .header("X-Razorpay-Signature", validSignature))
+                .andExpect(status().isNotFound());
+
+        mvc.perform(post("/api/webhooks/razorpay")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload)
+                        .header("X-Razorpay-Signature", "bad-signature"))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(post("/customers")
+                        .with(user("admin").roles("ADMIN"))
+                        .param("name", "Needs CSRF")
+                        .param("phone", "9000000011")
+                        .param("area", "Trichy")
+                        .param("addressLine", "Test street"))
+                .andExpect(status().isForbidden());
+    }
+
+    private static String hmacSha256(String payload, String secret) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        byte[] digest = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder(digest.length * 2);
+        for (byte value : digest) {
+            sb.append(String.format(Locale.ROOT, "%02x", value));
+        }
+        return sb.toString();
     }
 
     @Test void customerOrderInvoiceAndPaymentFlowUsesDatabase() throws Exception {

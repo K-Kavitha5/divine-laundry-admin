@@ -59,7 +59,10 @@ public class RazorpayWebhookController {
             return ResponseEntity.ok(Map.of("status", "ignored"));
         }
 
-        JsonNode paymentEntity = root.path("payload").path("payment").path("entity");
+        JsonNode payloadNode = root.path("payload");
+        JsonNode paymentEntity = entityFrom(payloadNode, "payment");
+        JsonNode paymentLinkEntity = entityFrom(payloadNode, "payment_link");
+        JsonNode orderEntity = entityFrom(payloadNode, "order");
         if (paymentEntity.isMissingNode() || paymentEntity.isNull()) {
             return ResponseEntity.ok(Map.of("status", "ignored"));
         }
@@ -71,8 +74,28 @@ public class RazorpayWebhookController {
             return ResponseEntity.ok(Map.of("status", "ignored"));
         }
 
-        JsonNode paymentLinkEntity = root.path("payload").path("payment_link").path("entity");
-        String referenceId = paymentLinkEntity.path("reference_id").asText(null);
+        String providerReference = firstNonBlank(
+                textValue(paymentLinkEntity, "id"),
+                textValue(paymentEntity, "payment_link_id"),
+                textValue(paymentEntity, "link_id"),
+                textValue(orderEntity, "payment_link_id"),
+                textValue(orderEntity, "link_id"));
+        if (!StringUtils.hasText(providerReference)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "missing_provider_reference"));
+        }
+
+        String referenceId = firstNonBlank(
+                textValue(paymentLinkEntity, "reference_id"),
+                textValue(paymentLinkEntity, "referenceId"),
+                textValue(orderEntity, "receipt"),
+                textValue(orderEntity, "reference_id"),
+                textValue(orderEntity, "referenceId"),
+                textValue(paymentEntity, "receipt"),
+                textValue(paymentEntity, "reference_id"),
+                textValue(paymentLinkEntity.path("notes"), "reference_id"),
+                textValue(paymentLinkEntity.path("notes"), "referenceId"),
+                textValue(orderEntity.path("notes"), "reference_id"),
+                textValue(orderEntity.path("notes"), "referenceId"));
         if (!StringUtils.hasText(referenceId)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "missing_reference"));
         }
@@ -82,19 +105,39 @@ public class RazorpayWebhookController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("status", "unknown_reference"));
         }
 
-        BigDecimal amount = parseAmount(paymentEntity.path("amount"));
-        String currency = paymentEntity.path("currency").asText(null);
-        if (amount == null || !StringUtils.hasText(currency)) {
-            amount = parseAmount(paymentLinkEntity.path("amount"));
-            currency = paymentLinkEntity.path("currency").asText(null);
+        String paymentLinkIdFromEntity = textValue(paymentEntity, "payment_link_id");
+        if (StringUtils.hasText(paymentLinkIdFromEntity) && !providerReference.equals(paymentLinkIdFromEntity)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "provider_reference_mismatch"));
         }
+        if (StringUtils.hasText(request.getProviderReference())
+                && !request.getProviderReference().equals(providerReference)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "provider_reference_mismatch"));
+        }
+
+        BigDecimal paymentAmount = parseAmount(paymentEntity.path("amount"));
+        BigDecimal paymentLinkAmount = parseAmount(paymentLinkEntity.path("amount"));
+        BigDecimal orderAmount = parseAmount(orderEntity.path("amount"));
+        BigDecimal amount = firstNonNull(paymentAmount, paymentLinkAmount, orderAmount);
+        String currency = firstNonBlank(
+                paymentEntity.path("currency").asText(null),
+                paymentLinkEntity.path("currency").asText(null),
+                orderEntity.path("currency").asText(null));
         if (amount == null || !StringUtils.hasText(currency)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "missing_payment_details"));
+        }
+        if (paymentAmount != null && paymentLinkAmount != null && paymentAmount.compareTo(paymentLinkAmount) != 0) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "amount_mismatch"));
+        }
+        if (paymentAmount != null && orderAmount != null && paymentAmount.compareTo(orderAmount) != 0) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "amount_mismatch"));
         }
         if (amount.compareTo(request.getRequestedAmount()) != 0) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "amount_mismatch"));
         }
         if (!request.getCurrency().equalsIgnoreCase(currency)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "currency_mismatch"));
+        }
+        if (!"INR".equalsIgnoreCase(currency)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "currency_mismatch"));
         }
 
@@ -110,12 +153,12 @@ public class RazorpayWebhookController {
         }
 
         if (!StringUtils.hasText(request.getProviderReference())) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("status", "missing_provider_reference"));
+            request.setProviderReference(providerReference);
         }
 
         paymentRequestService.confirmVerifiedPayment(
                 request.getOrderNumber(),
-                request.getProviderReference(),
+                providerReference,
                 request.getRequestedAmount(),
                 request.getCurrency(),
                 "razorpay-webhook");
@@ -144,6 +187,52 @@ public class RazorpayWebhookController {
         } catch (Exception ex) {
             return false;
         }
+    }
+
+    private JsonNode entityFrom(JsonNode payloadNode, String fieldName) {
+        if (payloadNode == null || payloadNode.isMissingNode() || payloadNode.isNull()) {
+            return payloadNode == null ? null : payloadNode;
+        }
+        JsonNode candidate = payloadNode.path(fieldName);
+        if (candidate != null && candidate.has("entity") && !candidate.path("entity").isMissingNode()) {
+            return candidate.path("entity");
+        }
+        return candidate;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private static BigDecimal firstNonNull(BigDecimal... values) {
+        if (values == null) {
+            return null;
+        }
+        for (BigDecimal value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String textValue(JsonNode node, String fieldName) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        JsonNode value = node.path(fieldName);
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        return value.asText(null);
     }
 
     private BigDecimal parseAmount(JsonNode node) {

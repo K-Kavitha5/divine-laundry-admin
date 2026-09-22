@@ -245,10 +245,25 @@ function NewOrder({ services, customers, onCreateOrder, checkOpenOrders, created
 
   const addService = service => setCart(current => {
     const found = current.find(item => item.id === service.id)
-    if (found) return current.map(item => item.id === service.id ? { ...item, quantity: item.quantity + 1, pieces: item.pieces + 1 } : item)
-    return [...current, { ...service, quantity: Number(service.quantity ?? 1), pieces: Number(service.pieces ?? 1) }]
+    const nextQuantity = Number(service.quantity ?? 1)
+    const nextPieces = Number(service.pieces ?? nextQuantity)
+    if (found) {
+      const incrementedQuantity = Number(found.quantity || 0) + 1
+      const incrementedPieces = service.unit === 'PIECE' ? incrementedQuantity : Number(found.pieces || 0) + 1
+      return current.map(item => item.id === service.id ? { ...item, quantity: incrementedQuantity, pieces: incrementedPieces } : item)
+    }
+    return [...current, { ...service, quantity: nextQuantity, pieces: service.unit === 'PIECE' ? nextQuantity : nextPieces }]
   })
-  const updateItem = (id, key, value) => setCart(current => current.map(item => item.id === id ? { ...item, [key]: Math.max(0, Number(value)) } : item))
+  const updateItem = (id, key, value) => setCart(current => current.map(item => {
+    if (item.id !== id) return item
+    const numericValue = Number(value)
+    const safeValue = Number.isFinite(numericValue) ? Math.max(0, numericValue) : 0
+    if (item.unit === 'PIECE' && (key === 'quantity' || key === 'pieces')) {
+      const nextQuantity = Math.round(safeValue)
+      return { ...item, quantity: nextQuantity, pieces: nextQuantity }
+    }
+    return { ...item, [key]: safeValue }
+  }))
   const removeItem = id => setCart(current => current.filter(item => item.id !== id))
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.rate * item.quantity, 0), [cart])
   const rounded = Math.round(subtotal)
@@ -285,10 +300,16 @@ function NewOrder({ services, customers, onCreateOrder, checkOpenOrders, created
       const result = await onCreateOrder({
         customerId: Number(selectedCustomer.id), deliveryAt, notes, createdBy,
         discount: 0, tax: 0,
-        items: cart.map(item => ({
-          serviceId: Number(item.id), billableQuantity: Number(item.quantity),
-          pieceCount: Number(item.pieces), noPrint: Boolean(item.noPrint),
-        })),
+        items: cart.map(item => {
+          const numberQuantity = Number(item.quantity || 0)
+          const numberPieces = Number(item.pieces || 0)
+          const normalizedQuantity = item.unit === 'PIECE' ? Math.round(numberQuantity) : numberQuantity
+          const normalizedPieces = item.unit === 'PIECE' ? normalizedQuantity : numberPieces
+          return {
+            serviceId: Number(item.id), billableQuantity: normalizedQuantity,
+            pieceCount: normalizedPieces, noPrint: Boolean(item.noPrint),
+          }
+        }),
       }, clientRequestId, finalise, true)
       const invoiceText = result.invoiceNumber ? `Invoice ${result.invoiceNumber}` : `Order ${result.orderNumber}`
       const whatsappText = !finalise ? ''
